@@ -1,0 +1,12 @@
+[project]
+name = "kesesfigyelo"
+version = "0.1.0"
+requires-python = "==3.14.8"
+dependencies = ["gtfs-realtime-bindings==3.0.0"]
+
+[dependency-groups]
+dev = ["pip>=26.2,<27", "ruff>=0.14,<1"]
+
+[tool.uv]
+package = false
+

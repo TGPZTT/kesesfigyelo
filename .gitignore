@@ -1,6 +1,8 @@
 .venv/
 .env*
+!.env.example
 data/
 __pycache__/
 *.py[cod]
 .ruff_cache/
+.gyujto-atmeneti/

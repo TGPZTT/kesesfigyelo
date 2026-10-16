@@ -1,4 +1,4 @@
-"""Nyers BKK-adatok mentése. Folyamatos futás csak külön kapcsolóval."""
+"""BKK-adatok és időjárás mentése. Folyamatos futás csak külön kapcsolóval."""
 
 import argparse
 import gzip
@@ -26,7 +26,18 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from google.protobuf.message import DecodeError
 from google.transit import gtfs_realtime_pb2
 
+# Mit kérünk le, és milyen sűrűn.
 FORRASOK = {"VehiclePositions": 30, "TripUpdates": 30, "Alerts": 60}
+PERIODUSOK = {**FORRASOK, "Menetrend": 86400, "Idojaras": 900}
+IDOJARAS_PONTOK = {
+    "Belvaros": (47.497413, 19.055158),
+    "Rakosmente": (47.478941, 19.256176),
+    "Godollo": (47.597505, 19.347599),
+}
+IDOJARAS_EGYSEGEK = {
+    "temperature_2m": "°C", "precipitation": "mm",
+    "wind_speed_10m": "km/h", "weather_code": "wmo code",
+}
 MENETREND_URL = "https://go.bkk.hu/api/static/v1/public-gtfs/budapest_gtfs.zip"
 MIN_KOZ = 10
 MAX_RT = 50 * 1024 * 1024
@@ -39,6 +50,7 @@ def utc(ido):
     return datetime.fromtimestamp(ido, UTC).isoformat()
 
 
+# Letöltés és a szerver által kért várakozás.
 class LetoltesHiba(Exception):
     """A teljes URL és a kulcs helyett csak biztonságos hibaadatokat viszünk tovább."""
 
@@ -58,7 +70,10 @@ def retry_after(ertek, now=None):
         datum = parsedate_to_datetime(ertek)
         if datum.tzinfo is None:
             datum = datum.replace(tzinfo=UTC)
-        return min(MAX_VARAKOZAS, max(0, math.ceil(datum.timestamp() - (time.time() if now is None else now))))
+        return min(
+            MAX_VARAKOZAS,
+            max(0, math.ceil(datum.timestamp() - (time.time() if now is None else now))),
+        )
     except (TypeError, ValueError, OverflowError):
         return None
 
@@ -67,7 +82,7 @@ class BiztonsagosAtiranyitas(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         regi = urlsplit(req.full_url)
         uj = urlsplit(newurl)
-        # A kulcsot nem továbbítjuk másik kiszolgálónak, HTTPS-ről sem lépünk vissza.
+        # A kulcsot nem küldjük másik kiszolgálóra, és maradunk HTTPS-en.
         if uj.scheme != "https" or (regi.query and uj.netloc.lower() != regi.netloc.lower()):
             raise LetoltesHiba("tiltott_atiranyitas", code)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
@@ -108,10 +123,11 @@ def letolt(url, max_meret, fejlecek=None):
         raise
     except (OSError, ValueError, HTTPException):
         uj_hiba = LetoltesHiba("halozati_hiba")
-    # Már az except blokkon kívül vagyunk: a korábbi kivétel URL-je sem láncolódik tovább.
+    # A korábbi hiba URL-je ne kerüljön a kiírt hibába.
     raise uj_hiba
 
 
+# Csak a kész fájl kerül a helyére.
 def atomikus_iras(cel, adat, atmeneti=None):
     cel.parent.mkdir(parents=True, exist_ok=True)
     atmeneti = atmeneti or cel.parent
@@ -136,15 +152,20 @@ def mentes(data, tipus, payload, tomorit=True):
     azonosito = hashlib.sha256(payload).hexdigest()
     mappa = "nyers" if tomorit else "menetrend"
     veg = ".pb.gz" if tomorit else ".zip"
+    if tipus == "Idojaras":
+        veg = ".json.gz"
     cel = data / mappa / tipus / azonosito[:2] / (azonosito + veg)
     uj = not cel.exists()
     if uj:
         if shutil.disk_usage(data).free < TARTALEK + len(payload):
             raise OSError("keves_tarhely")
-        atomikus_iras(cel, gzip.compress(payload, mtime=0) if tomorit else payload,
-                     data.parent / ".gyujto-atmeneti")
+        atomikus_iras(
+            cel,
+            gzip.compress(payload, mtime=0) if tomorit else payload,
+            data.parent / ".gyujto-atmeneti",
+        )
     else:
-        # Azonos név alatt sérült fájlt sem fogadunk el és nem írunk felül csendben.
+        # A meglévő fájlt is ellenőrizzük, hátha megsérült.
         try:
             regi = gzip.decompress(cel.read_bytes()) if tomorit else cel.read_bytes()
         except (OSError, EOFError, zlib.error):
@@ -155,6 +176,7 @@ def mentes(data, tipus, payload, tomorit=True):
             "uj_fajl": uj, "nyers_bajt": len(payload), "mentett_bajt": cel.stat().st_size}
 
 
+# A mentett válaszok ellenőrzése.
 def feed_adatok(payload, forras, most):
     feed = gtfs_realtime_pb2.FeedMessage()
     feed.ParseFromString(payload)
@@ -179,7 +201,10 @@ def feed_adatok(payload, forras, most):
         "elemek": len(feed.entity), "jarmuvek": len(jarmuvek), "menetfrissitesek": len(menetek),
         "jelzesek": sum(e.HasField("alert") for e in feed.entity),
         "alakzatok": sum(e.HasField("shape") for e in feed.entity),
-        "torolt_menetek": sum(m.trip.schedule_relationship == gtfs_realtime_pb2.TripDescriptor.CANCELED for m in menetek),
+        "torolt_menetek": sum(
+            m.trip.schedule_relationship == gtfs_realtime_pb2.TripDescriptor.CANCELED
+            for m in menetek
+        ),
         "jarmu_ido_hianyzik": sum(not j.HasField("timestamp") for j in jarmuvek),
         "regi_jarmupoziciok": sum(k > 90 for k in korok),
         "jovobeli_jarmupoziciok": sum(k < -5 for k in korok),
@@ -190,6 +215,59 @@ def feed_adatok(payload, forras, most):
     }
 
 
+def idojaras_parameterek():
+    return {
+        "latitude": ",".join(str(p[0]) for p in IDOJARAS_PONTOK.values()),
+        "longitude": ",".join(str(p[1]) for p in IDOJARAS_PONTOK.values()),
+        "current": ",".join(IDOJARAS_EGYSEGEK),
+        "temperature_unit": "celsius", "wind_speed_unit": "kmh",
+        "precipitation_unit": "mm", "timeformat": "unixtime",
+        "timezone": "GMT", "models": "best_match",
+    }
+
+
+def idojaras_adatok(payload, most):
+    adatok = json.loads(payload)
+    if not isinstance(adatok, list) or len(adatok) != len(IDOJARAS_PONTOK):
+        raise ValueError("hianyos_idojaras")
+    pontok = []
+    for (nev, hely), adat in zip(IDOJARAS_PONTOK.items(), adatok):
+        aktualis = adat["current"]
+        egysegek = adat["current_units"]
+        if not isinstance(aktualis, dict) or not isinstance(egysegek, dict):
+            raise TypeError("hibas_idojaras_szerkezet")
+        if egysegek.get("time") != "unixtime" or egysegek.get("interval") != "seconds":
+            raise ValueError("hibas_idojaras_idoegyseg")
+        for mezo, egyseg in IDOJARAS_EGYSEGEK.items():
+            ertek = aktualis[mezo]
+            if egysegek.get(mezo) != egyseg:
+                raise ValueError("hibas_idojaras_mertekegyseg")
+            # A hiányzó csapadék nem ugyanaz, mint a nulla.
+            if ertek is not None and (type(ertek) not in (int, float) or not math.isfinite(ertek)):
+                raise ValueError("hibas_idojaras_ertek")
+        if (
+            type(aktualis["time"]) is not int
+            or type(aktualis["interval"]) is not int
+            or aktualis["interval"] <= 0
+        ):
+            raise ValueError("hibas_idojaras_ido")
+        for mezo, kert in zip(("latitude", "longitude"), hely):
+            if (
+                type(adat[mezo]) not in (int, float)
+                or not math.isfinite(adat[mezo])
+                or abs(adat[mezo] - kert) > 0.2
+            ):
+                raise ValueError("eltero_idojarasi_hely")
+        kor = most - aktualis["time"]
+        pontok.append({
+            "terseg": nev, "kert_latitude": hely[0], "kert_longitude": hely[1],
+            "adat_ido": aktualis["time"], "adat_kor_mp": kor,
+            "regi": kor > 1800, "jovobeli": kor < -5,
+            "hianyzo_ertekek": sum(aktualis[m] is None for m in IDOJARAS_EGYSEGEK),
+        })
+    return {"pontok": pontok, "ertelmezes": "idojarasi modelladat, nem helyi meres"}
+
+
 def menetrend_ellenorzes(payload):
     with zipfile.ZipFile(BytesIO(payload)) as csomag:
         nevek = set(csomag.namelist())
@@ -198,7 +276,10 @@ def menetrend_ellenorzes(payload):
             raise ValueError("hianyos_menetrend")
         if sum(f.file_size for f in csomag.infolist()) > 4 * 1024**3:
             raise ValueError("tul_nagy_kibontott_menetrend")
-        if any(f.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED) for f in csomag.infolist()):
+        if any(
+            f.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
+            for f in csomag.infolist()
+        ):
             raise ValueError("nem_tamogatott_zip_tomorites")
         if csomag.testzip() is not None:
             raise ValueError("serult_menetrend")
@@ -207,19 +288,25 @@ def menetrend_ellenorzes(payload):
 
 def valasz_mentese(data, forras, payload, kezdett, vegzett):
     eredmeny = {"forras": forras, "kezdett_utc": utc(kezdett), "vegzett_utc": utc(vegzett)}
-    # Az eredeti bájtok a feldolgozás előtt megmaradnak, hibás tartalom esetén is.
+    # Előbb mentünk, utána ellenőrzünk. A hibás válasz is megmarad.
     eredmeny.update(mentes(data, forras, payload, tomorit=forras != "Menetrend"))
     try:
         if forras == "Menetrend":
             eredmeny.update(menetrend_ellenorzes(payload))
+        elif forras == "Idojaras":
+            eredmeny.update(idojaras_adatok(payload, vegzett))
         else:
             eredmeny.update(feed_adatok(payload, forras, vegzett))
         eredmeny["eredmeny"] = "siker"
-    except (DecodeError, ValueError, zipfile.BadZipFile, EOFError, RuntimeError, zlib.error):
+    except (
+        DecodeError, ValueError, KeyError, TypeError,
+        zipfile.BadZipFile, EOFError, RuntimeError, zlib.error,
+    ):
         eredmeny["eredmeny"] = "hibas_valasz"
     return eredmeny
 
 
+# Minden próbáról külön napló készül.
 def naplo(data, bejegyzes):
     ido = datetime.fromisoformat(bejegyzes["kezdett_utc"])
     nev = ido.strftime("%H%M%S%f") + "--" + bejegyzes["forras"] + "--" + uuid.uuid4().hex + ".json"
@@ -254,7 +341,7 @@ def lepes(data, forras, kulcs, hibak=0, elozo=None, menetrend=None):
     menetrend = elozo if forras == "Menetrend" else (menetrend or {})
     ervenyes = ervenyes_menetrend(data, menetrend) if forras == "Menetrend" else bool(menetrend)
     rekord = {"forras": forras, "kezdett_utc": utc(kezdet)}
-    if forras != "Menetrend":
+    if forras in FORRASOK:
         rekord["ismert_menetrend_sha256"] = menetrend.get("sha256") if ervenyes else None
     try:
         fejlecek = {}
@@ -263,9 +350,18 @@ def lepes(data, forras, kulcs, hibak=0, elozo=None, menetrend=None):
             for mezo, fejlec in (("etag", "If-None-Match"), ("last_modified", "If-Modified-Since")):
                 if elozo.get(mezo) and ervenyes:
                     fejlecek[fejlec] = elozo[mezo]
+        elif forras == "Idojaras":
+            rekord["parameterek"] = idojaras_parameterek()
+            url = "https://api.open-meteo.com/v1/forecast?" + urlencode(rekord["parameterek"])
         else:
-            url = "https://go.bkk.hu/api/query/v1/ws/gtfs-rt/full/" + forras + ".pb?" + urlencode({"key": kulcs})
-        payload, status, head = letolt(url, MAX_GTFS if forras == "Menetrend" else MAX_RT, fejlecek)
+            url = (
+                "https://go.bkk.hu/api/query/v1/ws/gtfs-rt/full/"
+                + forras + ".pb?" + urlencode({"key": kulcs})
+            )
+        max_meret = MAX_GTFS if forras == "Menetrend" else MAX_RT
+        if forras == "Idojaras":
+            max_meret = 1024 * 1024
+        payload, status, head = letolt(url, max_meret, fejlecek)
         rekord["http_status"] = status
         if status == 304 and forras == "Menetrend" and ervenyes:
             rekord.update({k: elozo[k] for k in ("fajl", "sha256", "etag", "last_modified") if k in elozo})
@@ -286,9 +382,15 @@ def lepes(data, forras, kulcs, hibak=0, elozo=None, menetrend=None):
     rekord["vegzett_utc"] = utc(time.time())
     siker = rekord["eredmeny"] in ("siker", "nem_valtozott")
     rekord["egymas_utani_hibak"] = 0 if siker else hibak + 1
-    alap = 86400 if forras == "Menetrend" else FORRASOK[forras]
-    rekord["varakozas_mp"] = alap if siker else max(min(900, 30 * 2 ** min(hibak, 5)), rekord.get("retry_after_mp") or 0)
-    rekord["kovetkezo_engedelyezett_utc"] = utc((kezdet if siker else time.time()) + rekord["varakozas_mp"])
+    alap = PERIODUSOK[forras]
+    rekord["varakozas_mp"] = alap if siker else max(
+        min(900, 30 * 2 ** min(hibak, 5)), rekord.get("retry_after_mp") or 0
+    )
+    if forras == "Idojaras":
+        rekord["varakozas_mp"] = max(alap, rekord["varakozas_mp"])
+    rekord["kovetkezo_engedelyezett_utc"] = utc(
+        (kezdet if siker else time.time()) + rekord["varakozas_mp"]
+    )
     naplo(data, rekord)
     print(forras + ": " + rekord["eredmeny"] + ", " + str(rekord.get("nyers_bajt", 0)) + " bajt", flush=True)
     return rekord
@@ -320,49 +422,104 @@ def kovetkezo_utes(esedekes, most, periodus):
     return esedekes + ugras * periodus, ugras - 1
 
 
+# Óránkénti összesítés a naplókból.
 def ures_minoseg(ora):
     forrasok = {}
-    for s, periodus in FORRASOK.items():
-        forrasok[s] = {"probak": 0, "siker": 0, "hibak": 0, "regi_feed": 0,
-                      "ido_hianyzik": 0, "max_jarmu": 0, "max_menetfrissites": 0,
-                      "max_res_mp": None, "teljes_orara_tervezett": 3600 // periodus}
+    for forras, periodus in PERIODUSOK.items():
+        if forras == "Menetrend":
+            continue
+        forrasok[forras] = {
+            "probak": 0, "siker": 0, "hibak": 0,
+            "regi_feed": 0, "ido_hianyzik": 0,
+            "max_jarmu": 0, "max_menetfrissites": 0,
+            "max_keresi_res_mp": None, "max_sikeres_res_mp": None,
+            "utolso_keres_ota_mp": None, "utolso_siker_ota_mp": None,
+            "teljes_orara_tervezett": 3600 // periodus,
+        }
+        if forras == "Idojaras":
+            forrasok[forras] = {k: v for k, v in forrasok[forras].items()
+                               if k not in ("regi_feed", "ido_hianyzik", "max_jarmu", "max_menetfrissites")}
+            forrasok[forras].update({"regi_pontok": 0, "hianyzo_ertekek": 0})
     return {"ora_utc": ora, "forrasok": forrasok, "reszora_lehet": True}
 
 
-def minoseg(data, ora=None):
-    orak = {} if ora is None else {ora: ures_minoseg(ora)}
-    elozo_idok = {}
-    for fajl in sorted((data / "naplo").glob("*/*.json")):
-        r = json.loads(fajl.read_text(encoding="utf-8"))
-        if r.get("teszt") or r["forras"] not in FORRASOK:
+def minoseg(data, ora=None, most=None):
+    most = time.time() if most is None else most
+    naplok = {}
+    elozo_keresek = {}
+    elozo_sikerek = {}
+    forrasok = {*FORRASOK, "Idojaras"}
+    for fajl in sorted((data / "naplo").glob("*/*--*--*.json"), reverse=ora is not None):
+        if ora is not None:
+            fajl_oraja = fajl.parent.name + "T" + fajl.name[:2]
+            forras = fajl.name.split("--")[1]
+            if fajl_oraja > ora or forras not in forrasok:
+                continue
+            if fajl_oraja < ora and forras in elozo_sikerek:
+                continue
+        rekord = json.loads(fajl.read_text(encoding="utf-8"))
+        if rekord.get("teszt") or rekord["forras"] not in forrasok:
             continue
-        kulcs = r["kezdett_utc"][:13]
-        ido = datetime.fromisoformat(r["kezdett_utc"]).timestamp()
-        elozo_ido = elozo_idok.get(r["forras"])
-        elozo_idok[r["forras"]] = ido
-        if ora is not None and kulcs != ora:
+        ora_neve = rekord["kezdett_utc"][:13]
+        ido = datetime.fromisoformat(rekord["kezdett_utc"]).timestamp()
+        if ido > most or (ora is not None and ora_neve > ora):
             continue
-        if kulcs not in orak:
-            orak[kulcs] = ures_minoseg(kulcs)
-        sor = orak[kulcs]["forrasok"][r["forras"]]
-        sor["probak"] += 1
-        siker = r["eredmeny"] == "siker"
-        sor["siker"] += int(siker)
-        sor["hibak"] += int(not siker)
-        sor["regi_feed"] += int(r.get("feed_regi") is True)
-        sor["ido_hianyzik"] += int(siker and r.get("feed_ido") is None)
-        sor["max_jarmu"] = max(sor["max_jarmu"], r.get("jarmuvek", 0))
-        sor["max_menetfrissites"] = max(sor["max_menetfrissites"], r.get("menetfrissitesek", 0))
-        if elozo_ido is not None:
-            sor["max_res_mp"] = max(sor["max_res_mp"] or 0, ido - elozo_ido)
-    if orak and ora is None:
-        kezdet = datetime.fromisoformat(min(orak) + ":00:00+00:00")
-        veg = datetime.fromisoformat(max(orak) + ":00:00+00:00")
-        while kezdet <= veg:
-            kulcs = kezdet.isoformat()[:13]
-            orak.setdefault(kulcs, ures_minoseg(kulcs))
-            kezdet += timedelta(hours=1)
-    return [orak[k] for k in sorted(orak)]
+        if ora is not None and ora_neve < ora:
+            # Az előző órákból csak az utolsó próba és siker ideje kell.
+            forras = rekord["forras"]
+            elozo_keresek.setdefault(forras, ido)
+            if rekord["eredmeny"] == "siker":
+                elozo_sikerek.setdefault(forras, ido)
+            if forrasok <= elozo_sikerek.keys():
+                break
+            continue
+        naplok.setdefault(ora_neve, []).append((ido, rekord))
+    if not naplok and ora is None:
+        return []
+
+    kezdet = datetime.fromisoformat((ora or min(naplok)) + ":00:00+00:00")
+    veg = datetime.fromisoformat((ora or utc(most)[:13]) + ":00:00+00:00")
+    orak = []
+    while kezdet <= veg:
+        ora_neve = kezdet.isoformat()[:13]
+        osszesites = ures_minoseg(ora_neve)
+        for ido, rekord in sorted(naplok.get(ora_neve, []), key=lambda elem: elem[0]):
+            forras = rekord["forras"]
+            sor = osszesites["forrasok"][forras]
+            siker = rekord["eredmeny"] == "siker"
+            sor["probak"] += 1
+            sor["siker"] += int(siker)
+            sor["hibak"] += int(not siker)
+            if forras == "Idojaras":
+                sor["regi_pontok"] += sum(p["regi"] for p in rekord.get("pontok", []))
+                sor["hianyzo_ertekek"] += sum(p["hianyzo_ertekek"] for p in rekord.get("pontok", []))
+            else:
+                sor["regi_feed"] += int(rekord.get("feed_regi") is True)
+                sor["ido_hianyzik"] += int(siker and rekord.get("feed_ido") is None)
+                sor["max_jarmu"] = max(sor["max_jarmu"], rekord.get("jarmuvek", 0))
+                sor["max_menetfrissites"] = max(sor["max_menetfrissites"], rekord.get("menetfrissitesek", 0))
+            if forras in elozo_keresek:
+                res = ido - elozo_keresek[forras]
+                sor["max_keresi_res_mp"] = max(sor["max_keresi_res_mp"] or 0, res)
+            elozo_keresek[forras] = ido
+            if siker:
+                if forras in elozo_sikerek:
+                    res = ido - elozo_sikerek[forras]
+                    sor["max_sikeres_res_mp"] = max(sor["max_sikeres_res_mp"] or 0, res)
+                elozo_sikerek[forras] = ido
+
+        # Az üres óra és a még tartó szünet is látszódjon.
+        ora_vege = min(most, (kezdet + timedelta(hours=1)).timestamp())
+        osszesites["ellenorzott_utc"] = utc(ora_vege)
+        for forras, sor in osszesites["forrasok"].items():
+            if forras in elozo_keresek:
+                sor["utolso_keres_ota_mp"] = ora_vege - elozo_keresek[forras]
+            if forras in elozo_sikerek:
+                sor["utolso_siker_ota_mp"] = ora_vege - elozo_sikerek[forras]
+        if ora is None or ora_neve == ora:
+            orak.append(osszesites)
+        kezdet += timedelta(hours=1)
+    return orak
 
 
 def minoseg_mentes(data, ora):
@@ -394,8 +551,10 @@ def keresi_hatar(data):
     return hatar
 
 
-def futtat(data, kulcs, egyszer=False):
-    forrasok = list(FORRASOK) if egyszer else list(FORRASOK) + ["Menetrend"]
+# A kérések sorrendje és a köztük tartott szünet.
+def futtat(data, kulcs, egyszer=False, forrasok=None):
+    if forrasok is None:
+        forrasok = list(FORRASOK) if egyszer else list(PERIODUSOK)
     kezdet = time.monotonic()
     esedekes = {s: kezdet + i * MIN_KOZ for i, s in enumerate(forrasok)}
     hibak = {s: 0 for s in forrasok}
@@ -404,29 +563,42 @@ def futtat(data, kulcs, egyszer=False):
     if not ervenyes_menetrend(data, menetrend):
         menetrend = {}
     globalis_varakozas = kezdet + max(0, keresi_hatar(data) - time.time())
-    # Újrainduláskor egy korábbi korlátozás várakozási idejét is betartjuk.
+    # Újraindítás után is kivárjuk a korábbi szünetet.
     for s in forrasok:
         elozo = elozok[s]
         hibak[s] = elozo.get("egymas_utani_hibak", 0)
         if elozo.get("kovetkezo_engedelyezett_utc"):
             hatar = datetime.fromisoformat(elozo["kovetkezo_engedelyezett_utc"]).timestamp()
             esedekes[s] = max(esedekes[s], kezdet + max(0, hatar - time.time()))
-            if elozo.get("http_status") in (429, 503):
+            if s != "Idojaras" and elozo.get("http_status") in (429, 503):
                 globalis_varakozas = max(globalis_varakozas, kezdet + max(0, hatar - time.time()))
-        if elozo.get("kezdett_utc"):
+        if s != "Idojaras" and elozo.get("kezdett_utc"):
             utolso_ido = datetime.fromisoformat(elozo["kezdett_utc"]).timestamp()
-            globalis_varakozas = max(globalis_varakozas, kezdet + max(0, utolso_ido + MIN_KOZ - time.time()))
+            globalis_varakozas = max(
+                globalis_varakozas, kezdet + max(0, utolso_ido + MIN_KOZ - time.time())
+            )
     utolso_keres = kezdet - MIN_KOZ
     ora = utc(time.time())[:13]
     minden_sikerult = True
     while esedekes:
         uj_ora = utc(time.time())[:13]
         if uj_ora != ora:
-            minoseg_mentes(data, ora)
+            try:
+                minoseg_mentes(data, ora)
+            except (OSError, ValueError, KeyError):
+                print("Az oras osszesites hibazott; a nyers gyujtes folytatodik.", flush=True)
             ora = uj_ora
-        s = min(esedekes, key=esedekes.get)
+        # Az időjárás és a BKK várakozása külön számít.
+        indulasi_idok = {
+            s: max(
+                ido, utolso_keres + MIN_KOZ,
+                0 if s == "Idojaras" else globalis_varakozas,
+            )
+            for s, ido in esedekes.items()
+        }
+        s = min(indulasi_idok, key=lambda nev: (indulasi_idok[nev], esedekes[nev]))
         most = time.monotonic()
-        indulhat = max(esedekes[s], utolso_keres + MIN_KOZ, globalis_varakozas)
+        indulhat = indulasi_idok[s]
         if most < indulhat:
             time.sleep(min(1, indulhat - most))
             continue
@@ -438,34 +610,41 @@ def futtat(data, kulcs, egyszer=False):
             menetrend = rekord
         minden_sikerult = minden_sikerult and rekord["eredmeny"] in ("siker", "nem_valtozott")
         hibak[s] = rekord["egymas_utani_hibak"]
-        if rekord.get("http_status") in (401, 403):
+        if s != "Idojaras" and rekord.get("http_status") in (401, 403):
             raise RuntimeError("hozzaferes_elutasitva; ellenorizd_helyben_a_kulcsot")
         if rekord["eredmeny"] == "helyi_hiba":
             raise RuntimeError("mentesi_hiba; ellenorizd_a_tarhelyet_es_jogosultsagot")
-        if rekord.get("http_status") in (429, 503):
+        if s != "Idojaras" and rekord.get("http_status") in (429, 503):
             globalis_varakozas = time.monotonic() + rekord["varakozas_mp"]
         if egyszer:
             del esedekes[s]
         elif hibak[s]:
             esedekes[s] = time.monotonic() + rekord["varakozas_mp"]
         else:
-            periodus = FORRASOK.get(s, 86400)
+            periodus = PERIODUSOK[s]
             esedekes[s], _ = kovetkezo_utes(tervezett, time.monotonic(), periodus)
+            if s == "Idojaras":
+                esedekes[s] = max(esedekes[s], utolso_keres + periodus)
     return minden_sikerult
 
 
+# A parancssori kapcsolók közül egyet lehet választani.
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Nyers BKK-adatok mentése; alapból csak súgó.")
+    parser = argparse.ArgumentParser(description="BKK-adatok és időjárás mentése; alapból csak súgó.")
     mod = parser.add_mutually_exclusive_group()
     mod.add_argument("--egyszer", action="store_true", help="Egy véges kör: három élő kérés.")
     mod.add_argument("--menetrend", action="store_true", help="A statikus GTFS egyszeri ellenőrzése.")
+    mod.add_argument("--idojaras", action="store_true", help="Egy időjárási kérés, három térségre; kulcs nélkül.")
     mod.add_argument("--folyamatos", action="store_true", help="Önálló gyűjtés; külön jóváhagyás után.")
-    mod.add_argument("--ellenorzes", type=Path, help="Mentett .pb.gz minták offline ellenőrzése.")
+    mod.add_argument("--ellenorzes", type=Path, help="Mentett BKK- és időjárásminták offline ellenőrzése.")
     mod.add_argument("--minoseg", action="store_true", help="Óránkénti összesítés a helyi naplókból.")
     parser.add_argument("--adatmappa", type=Path)
     parser.add_argument("--kulcsfajl", type=Path, default=Path(__file__).parent / ".env.bkk")
     args = parser.parse_args(argv)
-    if not any((args.egyszer, args.menetrend, args.folyamatos, args.ellenorzes, args.minoseg)):
+    if not any((
+        args.egyszer, args.menetrend, args.idojaras,
+        args.folyamatos, args.ellenorzes, args.minoseg,
+    )):
         parser.print_help()
         return 0
     data = args.adatmappa or Path(__file__).parent / "data"
@@ -479,12 +658,21 @@ def main(argv=None):
             if args.ellenorzes:
                 siker = True
                 feldolgozott = 0
-                for fajl in sorted(args.ellenorzes.glob("*.pb.gz")):
-                    forras = fajl.name.split("-")[0]
-                    if forras not in FORRASOK:
+                mintaforrasok = [*FORRASOK, "Idojaras"]
+                for fajl in sorted(args.ellenorzes.rglob("*")):
+                    if not fajl.is_file() or not fajl.name.endswith((".pb", ".pb.gz", ".json.gz")):
+                        continue
+                    forras = fajl.name.split(".")[0].split("-")[0]
+                    if forras not in mintaforrasok:
+                        for nev in mintaforrasok:
+                            if nev in fajl.parts:
+                                forras = nev
+                                break
+                    if forras not in mintaforrasok:
                         continue
                     feldolgozott += 1
-                    with gzip.open(fajl, "rb") as minta:
+                    megnyitas = gzip.open if fajl.name.endswith(".gz") else open
+                    with megnyitas(fajl, "rb") as minta:
                         payload = minta.read(MAX_RT + 1)
                     if len(payload) > MAX_RT:
                         raise ValueError("tul_nagy_minta")
@@ -502,6 +690,9 @@ def main(argv=None):
                     time.sleep(min(1, hatar - time.time()))
                 r = lepes(data, "Menetrend", "")
                 return 0 if r["eredmeny"] in ("siker", "nem_valtozott") else 1
+            if args.idojaras:
+                siker = futtat(data, "", egyszer=True, forrasok=["Idojaras"])
+                return 0 if siker else 1
             kulcs = beolvas_kulcs(args.kulcsfajl)
             siker = futtat(data, kulcs, egyszer=args.egyszer)
             return 0 if siker else 1
@@ -509,7 +700,7 @@ def main(argv=None):
         print("Leallitva. A mar elmentett adatok megmaradtak.")
         return 0
     except (OSError, ValueError, RuntimeError, zipfile.BadZipFile) as hiba:
-        # A kivétel szövege tartalmazhat URL-t vagy fájlnevet: csak a típusát írjuk ki.
+        # Csak a hiba típusát írjuk ki, mert a szövegben kulcs is lehet.
         print("A gyujto leallt: " + type(hiba).__name__ + ". Ellenorizd a naplot es a helyi beallitasokat.")
         return 1
 

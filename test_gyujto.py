@@ -12,9 +12,11 @@ import unittest
 import zipfile
 from contextlib import redirect_stdout
 from datetime import UTC, datetime
+from itertools import pairwise
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
+from urllib.parse import parse_qs, urlsplit
 from urllib.request import Request
 
 from google.transit import gtfs_realtime_pb2
@@ -22,6 +24,7 @@ from google.transit import gtfs_realtime_pb2
 import gyujto
 
 
+# A próbákhoz helyben készülnek kis mintaadatok.
 def proba_feed(idobelyeg=None, vegyes=False):
     feed = gtfs_realtime_pb2.FeedMessage()
     feed.header.gtfs_realtime_version = "2.0"
@@ -55,6 +58,16 @@ def proba_menetrend(tomorites=zipfile.ZIP_DEFLATED):
     return adat.getvalue()
 
 
+def proba_idojaras(ido=100):
+    return [{
+        "latitude": hely[0], "longitude": hely[1],
+        "current_units": {"time": "unixtime", "interval": "seconds", **gyujto.IDOJARAS_EGYSEGEK},
+        "current": {"time": ido, "interval": 900, "temperature_2m": 12.5,
+                    "precipitation": 0.2, "wind_speed_10m": 11.0, "weather_code": 3},
+    } for hely in gyujto.IDOJARAS_PONTOK.values()]
+
+
+# A hálózati válasz és az óra is utánzat.
 class ProbaValasz:
     def __init__(self, adat, status=200, fejlecek=None):
         self.adat = io.BytesIO(adat)
@@ -405,12 +418,49 @@ class GyujtoProba(unittest.TestCase):
                 "teszt": True,
             },
         )
-        rekord = gyujto.minoseg(self.data)[0]["forrasok"]["TripUpdates"]
+        rekord = gyujto.minoseg(self.data, most=200)[0]["forrasok"]["TripUpdates"]
         self.assertEqual(rekord["probak"], 3)
         self.assertEqual(rekord["siker"], 2)
         self.assertEqual(rekord["hibak"], 1)
         self.assertEqual(rekord["ido_hianyzik"], 2)
-        self.assertEqual(rekord["max_res_mp"], 30)
+        self.assertEqual(rekord["max_keresi_res_mp"], 30)
+        self.assertEqual(rekord["max_sikeres_res_mp"], 60)
+        self.assertEqual(rekord["utolso_siker_ota_mp"], 40)
+
+    def test_sikertelen_keres_nem_szakitja_meg_a_siker_nelkuli_idot(self):
+        for ido, status in ((100, "siker"), (130, "halozati_hiba"), (160, "halozati_hiba")):
+            gyujto.naplo(self.data, {
+                "forras": "TripUpdates", "kezdett_utc": gyujto.utc(ido),
+                "eredmeny": status,
+            })
+        sor = gyujto.minoseg(self.data, most=200)[0]["forrasok"]["TripUpdates"]
+        self.assertEqual(sor["max_keresi_res_mp"], 30)
+        self.assertIsNone(sor["max_sikeres_res_mp"])
+        self.assertEqual(sor["utolso_keres_ota_mp"], 40)
+        self.assertEqual(sor["utolso_siker_ota_mp"], 100)
+
+    def test_oras_osszesitesi_hiba_utan_folytatja_a_gyujtest(self):
+        ora = ProbaOra()
+        keresesek = []
+
+        def lepes(data, forras, kulcs, hibak, **kwargs):
+            keresesek.append(forras)
+            if len(keresesek) == 1:
+                ora.masodperc += 3601
+            return {"eredmeny": "siker", "egymas_utani_hibak": 0,
+                    "http_status": 200, "varakozas_mp": 30}
+
+        with (
+            patch.object(gyujto.time, "monotonic", ora.monotonic),
+            patch.object(gyujto.time, "time", ora.time),
+            patch.object(gyujto.time, "sleep", ora.sleep),
+            patch.object(gyujto, "lepes", side_effect=lepes),
+            patch.object(gyujto, "minoseg_mentes", side_effect=ValueError) as osszesites,
+            redirect_stdout(io.StringIO()),
+        ):
+            self.assertTrue(gyujto.futtat(self.data, "KITALALT", egyszer=True))
+        osszesites.assert_called_once()
+        self.assertEqual(keresesek, list(gyujto.FORRASOK))
 
     def test_kapcsolok_nelkul_csak_sugo(self):
         with (
@@ -435,6 +485,22 @@ class GyujtoProba(unittest.TestCase):
                 ["--ellenorzes", str(self.data / "ures"), "--adatmappa", str(self.data)]
             )
         self.assertEqual(eredmeny, 1)
+
+    def test_regi_minta_es_sajat_nyers_archivum_is_visszaolvashato(self):
+        mintak = self.data / "mintak"
+        mintak.mkdir()
+        (mintak / "VehiclePositions.pb").write_bytes(proba_feed(100))
+        (mintak / "Alerts-laptop.pb.gz").write_bytes(gzip.compress(proba_feed(100)))
+        gyujto.mentes(mintak, "TripUpdates", proba_feed(100))
+        cel = self.data / "ellenorzes"
+        with (
+            patch.object(gyujto, "beolvas_kulcs", side_effect=AssertionError("titokfajl")),
+            patch.object(gyujto, "letolt", side_effect=AssertionError("halozat")),
+            redirect_stdout(io.StringIO()),
+        ):
+            eredmeny = gyujto.main(["--ellenorzes", str(mintak), "--adatmappa", str(cel)])
+        self.assertEqual(eredmeny, 0)
+        self.assertEqual(len(list((cel / "naplo").rglob("*.json"))), 3)
 
     def test_masodik_peldany_nem_indulhat(self):
         with (
@@ -540,12 +606,19 @@ class GyujtoProba(unittest.TestCase):
                     "eredmeny": "siker",
                 },
             )
-        orak = gyujto.minoseg(self.data)
+        orak = gyujto.minoseg(self.data, most=7300)
         self.assertEqual(len(orak), 3)
         self.assertEqual(orak[1]["forrasok"]["TripUpdates"]["probak"], 0)
-        self.assertEqual(orak[2]["forrasok"]["TripUpdates"]["max_res_mp"], 3620)
-        egy_ora = gyujto.minoseg(self.data, ora=orak[2]["ora_utc"])
-        self.assertEqual(egy_ora[0]["forrasok"]["TripUpdates"]["max_res_mp"], 3620)
+        self.assertEqual(orak[1]["forrasok"]["TripUpdates"]["utolso_siker_ota_mp"], 3610)
+        self.assertEqual(orak[2]["forrasok"]["TripUpdates"]["max_keresi_res_mp"], 3620)
+        self.assertEqual(orak[2]["forrasok"]["TripUpdates"]["max_sikeres_res_mp"], 3620)
+        egy_ora = gyujto.minoseg(self.data, ora=orak[2]["ora_utc"], most=7300)
+        self.assertEqual(egy_ora[0], orak[2])
+        kesobb = gyujto.minoseg(self.data, most=10810)
+        self.assertEqual(len(kesobb), 4)
+        sor = kesobb[3]["forrasok"]["TripUpdates"]
+        self.assertEqual(sor["probak"], 0)
+        self.assertEqual(sor["utolso_siker_ota_mp"], 3600)
 
     def test_import_nem_ker_titkot_vagy_halozatot(self):
         kod = (
@@ -564,6 +637,198 @@ class GyujtoProba(unittest.TestCase):
             timeout=10,
         )
         self.assertEqual(eredmeny.returncode, 0, eredmeny.stderr)
+
+
+    def test_idojaras_harom_pont_egy_keres_kulcs_nelkul(self):
+        adat = json.dumps(proba_idojaras()).encode()
+        with (
+            patch.object(gyujto, "beolvas_kulcs", side_effect=AssertionError("titokfajl")),
+            patch.object(gyujto, "letolt", return_value=(adat, 200, {})) as kereses,
+            redirect_stdout(io.StringIO()),
+        ):
+            eredmeny = gyujto.main(["--idojaras", "--adatmappa", str(self.data)])
+        self.assertEqual(eredmeny, 0)
+        kereses.assert_called_once()
+        url = urlsplit(kereses.call_args.args[0])
+        param = parse_qs(url.query)
+        self.assertEqual(url.netloc, "api.open-meteo.com")
+        self.assertEqual(len(param["latitude"][0].split(",")), 3)
+        self.assertNotIn("key", param)
+        self.assertEqual(param["timeformat"], ["unixtime"])
+        fajl = next(self.data.rglob("*.json.gz"))
+        self.assertEqual(gzip.decompress(fajl.read_bytes()), adat)
+        rekord = gyujto.utolso(self.data, "Idojaras")
+        self.assertEqual(len(rekord["pontok"]), 3)
+        self.assertEqual(rekord["varakozas_mp"], 900)
+        self.assertEqual(rekord["parameterek"]["models"], "best_match")
+
+    def test_idojaras_hianyzo_ertek_nem_nullacsapadek(self):
+        adat = proba_idojaras()
+        adat[0]["current"]["precipitation"] = None
+        payload = json.dumps(adat).encode()
+        rekord = gyujto.valasz_mentese(self.data, "Idojaras", payload, 2000, 2001)
+        gyujto.naplo(self.data, rekord)
+        self.assertEqual(rekord["eredmeny"], "siker")
+        self.assertEqual(rekord["pontok"][0]["hianyzo_ertekek"], 1)
+        self.assertTrue(rekord["pontok"][0]["regi"])
+        sor = gyujto.minoseg(self.data, most=2010)[0]["forrasok"]["Idojaras"]
+        self.assertEqual(sor["teljes_orara_tervezett"], 4)
+        self.assertEqual(sor["regi_pontok"], 3)
+        self.assertEqual(sor["hianyzo_ertekek"], 1)
+        self.assertEqual(sor["utolso_siker_ota_mp"], 10)
+        self.assertIsNone(
+            json.loads(
+                gzip.decompress((self.data / rekord["fajl"]).read_bytes())
+            )[0]["current"]["precipitation"]
+        )
+
+    def test_idojaras_archivum_offline_visszaolvashato(self):
+        adat = json.dumps(proba_idojaras()).encode()
+        gyujto.mentes(self.data, "Idojaras", adat)
+        cel = self.data / "teszt"
+        with (
+            patch.object(gyujto, "beolvas_kulcs", side_effect=AssertionError("titokfajl")),
+            patch.object(gyujto, "letolt", side_effect=AssertionError("halozat")),
+            redirect_stdout(io.StringIO()),
+        ):
+            kod = gyujto.main(["--ellenorzes", str(self.data / "nyers"), "--adatmappa", str(cel)])
+        self.assertEqual(kod, 0)
+        self.assertEqual(len(list(cel.rglob("*.json.gz"))), 1)
+        naplo = json.loads(next((cel / "naplo").rglob("*.json")).read_text())
+        self.assertTrue(naplo["teszt"])
+
+    def test_hibas_idojaras_megmarad_de_nem_siker(self):
+        hianyos = proba_idojaras()
+        del hianyos[0]["current"]["time"]
+        mas_egyseg = proba_idojaras()
+        mas_egyseg[0]["current_units"]["precipitation"] = "inch"
+        rossz_hely = proba_idojaras()
+        rossz_hely[1]["latitude"] = 40
+        hibas_tipus = proba_idojaras()
+        hibas_tipus[0]["current_units"] = None
+        for adat in (
+            {"error": True}, [None] * 3, proba_idojaras()[:2],
+            hianyos, mas_egyseg, rossz_hely, hibas_tipus,
+        ):
+            with self.subTest(adat=adat):
+                payload = json.dumps(adat).encode()
+                rekord = gyujto.valasz_mentese(self.data, "Idojaras", payload, 100, 101)
+                self.assertEqual(rekord["eredmeny"], "hibas_valasz")
+                self.assertEqual(gzip.decompress((self.data / rekord["fajl"]).read_bytes()), payload)
+
+    def test_idojaras_hiba_utan_is_var_legalabb_negyedorat(self):
+        for kod, varakozas in ((503, None), (429, 1800)):
+            with (
+                self.subTest(kod=kod),
+                patch.object(gyujto, "letolt", side_effect=gyujto.LetoltesHiba("http_hiba", kod, varakozas)),
+                redirect_stdout(io.StringIO()),
+            ):
+                rekord = gyujto.lepes(self.data, "Idojaras", "")
+                self.assertEqual(rekord["varakozas_mp"], varakozas or 900)
+
+    def test_ket_szolgaltato_korlatozasa_fuggetlen(self):
+        for korlatozott, forrasok in (
+            ("Idojaras", ["Idojaras", "VehiclePositions", "TripUpdates"]),
+            ("VehiclePositions", ["VehiclePositions", "TripUpdates", "Idojaras"]),
+        ):
+            ora = ProbaOra()
+            keresesek = []
+
+            def lepes(data, forras, kulcs, hibak, ora=ora, keresesek=keresesek,
+                      korlatozott=korlatozott, **kwargs):
+                keresesek.append((forras, ora.masodperc))
+                hiba = forras == korlatozott
+                return {"eredmeny": "http_hiba" if hiba else "siker",
+                        "egymas_utani_hibak": int(hiba), "http_status": 429 if hiba else 200,
+                        "varakozas_mp": 900 if hiba else 30}
+
+            with (
+                self.subTest(korlatozott=korlatozott),
+                patch.object(gyujto.time, "monotonic", ora.monotonic),
+                patch.object(gyujto.time, "time", ora.time),
+                patch.object(gyujto.time, "sleep", ora.sleep),
+                patch.object(gyujto, "lepes", side_effect=lepes),
+            ):
+                self.assertFalse(gyujto.futtat(self.data, "KITALALT", egyszer=True, forrasok=forrasok))
+            idok = dict(keresesek)
+            if korlatozott == "Idojaras":
+                self.assertEqual(idok["VehiclePositions"], 10)
+                self.assertEqual(idok["TripUpdates"], 20)
+            else:
+                self.assertEqual(idok["Idojaras"], 20)
+                self.assertEqual(idok["TripUpdates"], 900)
+
+    def test_idojaras_ujraindulas_megvarja_a_korabbi_korlatot(self):
+        ora = ProbaOra()
+        gyujto.naplo(self.data, {
+            "forras": "Idojaras", "kezdett_utc": gyujto.utc(ora.time() - 1),
+            "kovetkezo_engedelyezett_utc": gyujto.utc(ora.time() + 120),
+            "eredmeny": "http_hiba", "http_status": 429, "egymas_utani_hibak": 1,
+        })
+        keresesek = []
+
+        def lepes(data, forras, kulcs, hibak, **kwargs):
+            keresesek.append((forras, ora.masodperc))
+            return {"eredmeny": "siker", "egymas_utani_hibak": 0,
+                    "http_status": 200, "varakozas_mp": 900}
+
+        with (
+            patch.object(gyujto.time, "monotonic", ora.monotonic),
+            patch.object(gyujto.time, "time", ora.time),
+            patch.object(gyujto.time, "sleep", ora.sleep),
+            patch.object(gyujto, "lepes", side_effect=lepes),
+        ):
+            gyujto.futtat(self.data, "KITALALT", egyszer=True, forrasok=["Idojaras", "VehiclePositions"])
+        self.assertEqual(keresesek, [("VehiclePositions", 10), ("Idojaras", 120)])
+
+    def test_idojaras_negyedoras_utemezese_gyorsitott_oraval(self):
+        ora = ProbaOra()
+        keresesek = []
+
+        def lepes(data, forras, kulcs, hibak, **kwargs):
+            if ora.masodperc >= 2000:
+                raise KeyboardInterrupt
+            keresesek.append((forras, ora.masodperc))
+            return {"eredmeny": "siker", "egymas_utani_hibak": 0,
+                    "http_status": 200, "varakozas_mp": gyujto.PERIODUSOK[forras]}
+
+        with (
+            patch.object(gyujto.time, "monotonic", ora.monotonic),
+            patch.object(gyujto.time, "time", ora.time),
+            patch.object(gyujto.time, "sleep", ora.sleep),
+            patch.object(gyujto, "lepes", side_effect=lepes),
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            gyujto.futtat(self.data, "KITALALT")
+        idok = [ido for forras, ido in keresesek if forras == "Idojaras"]
+        self.assertEqual(len(idok), 3)
+        self.assertTrue(all(900 <= b - a <= 930 for a, b in pairwise(idok)), idok)
+        self.assertGreater(sum(forras == "VehiclePositions" for forras, _ in keresesek), 50)
+
+    def test_celora_csak_szukseges_elozmenyt_olvas(self):
+        for ido, eredmeny in ((100, "siker"), (200, "siker"), (3500, "siker"),
+                              (3550, "halozati_hiba"), (3700, "siker")):
+            gyujto.naplo(self.data, {
+                "forras": "TripUpdates", "kezdett_utc": gyujto.utc(ido),
+                "eredmeny": eredmeny,
+            })
+        teljes = gyujto.minoseg(self.data, most=7300)
+        olvasas = Path.read_text
+        olvasott = []
+
+        def beolvas(fajl, *args, **kwargs):
+            olvasott.append(fajl)
+            return olvasas(fajl, *args, **kwargs)
+
+        with patch.object(Path, "read_text", beolvas):
+            ora = gyujto.minoseg(self.data, ora=gyujto.utc(3700)[:13], most=7300)
+        self.assertEqual(ora[0], teljes[1])
+        self.assertEqual(len(olvasott), 3)
+        sor = ora[0]["forrasok"]["TripUpdates"]
+        self.assertEqual(sor["max_keresi_res_mp"], 150)
+        self.assertEqual(sor["max_sikeres_res_mp"], 200)
+        ures = gyujto.minoseg(self.data, ora=gyujto.utc(7300)[:13], most=7300)
+        self.assertEqual(ures[0], teljes[2])
 
 
 if __name__ == "__main__":

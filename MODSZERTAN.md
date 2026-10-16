@@ -1,6 +1,6 @@
 # Módszertan
 
-Egyelőre a gyűjtő helyi változata van kész. A felügyelet nélküli szerveres futás, a késésszámítás és az adatbázisba töltés még hátravan. Az eredeti válaszokat mentem el, hogy később vissza lehessen nézni, miből számoltam.
+A gyűjtő és az adatbázis a szerveren fut, a háromnapos folyamatos gyűjtés ellenőrzése még tart. A betöltő külön fut, a késésszámítás még hátravan. Az eredeti válaszokat megtartom, hogy később vissza lehessen nézni, miből számoltam.
 
 A VehiclePositions és a TripUpdates tervezett lekérése 30, az Alertsé 60 másodpercenként történik. A félperces minta a megállók közti mozgás követéséhez kell; a ritkábban változó zavarjelzésekhez egy percet választottam. A menetrendet naponta ellenőrzöm, a ZIP változatait megtartom. Ezek saját beállítások, nem a BKK által megadott kvóták. Két kérés kezdete között legalább 10 másodperc van, lassulás után nincs gyors pótlás. A letöltések egymás után futnak, ezért egy lassú válasz késleltetheti a következőt; ez a naplóban látszik.
 
@@ -37,7 +37,7 @@ A 2026. október 16-án letöltött 2802.20261016 menetrendben ellenőrzött azo
 
 Mind a tíz vonal aktív október 16-án és 17-én. A 4–6 október 16-án Újbuda-központból (F01998) Széll Kálmán tér felé 07:01, 07:03, 07:05 és 07:07-kor indul: ez kétperces követés. Október 17-én az ellenkező irányban, Széll Kálmán térről (F02477) 07:00, 07:04, 07:08 és 07:12 szerepel. A napi kivételeket is figyelembe vettem. Ez az adott megállóra és időszakra igaz, nem egész napos garancia. A sima 4-es 3040 és a pótlóbusz VP46 más azonosító, ezeken a napokon egyik sem aktív.
 
-A H8 menetrendje október 17-én főleg Cinkota–Gödöllő meneteket tartalmaz. A megváltozott útvonalat nem szabad menetrendi kimaradásnak nézni. A gyűjtő a teljes feedeket menti, a vonalszűrés később történik. A tényleges indulások meghatározása és az ismétlésbiztos adatbázis-import a következő lépés.
+A H8 menetrendje október 17-én főleg Cinkota–Gödöllő meneteket tartalmaz. A megváltozott útvonalat nem szabad menetrendi kimaradásnak nézni. A gyűjtő a teljes feedeket menti, a vonalszűrés az adatbázisba töltéskor történik. A tényleges indulások meghatározása a következő feldolgozási lépés.
 
 Az október 16-i 17:47 UTC körüli egyszeri mintában mind a tíz vonal jelen volt a pozíciók és a menetfrissítések között. A H8-nál 5 jármű és 16 menetfrissítés látszott, az azonosítóik egyeztek a mentett menetrenddel. A TripUpdates fejlécének kora kb. 5 másodperc volt, mégis 16 H8-menetből 15 saját időbélyege 90 másodpercnél régebbi. Az éppen látható 5 jármű meneteinél ez 52–178 másodperc volt. Ez nem önmagában üzemkiesés: a fejléc, a jármű és az egyes menetek frissességét külön kell nézni. A feed nem adott menetrend-verziót; az azonosítóegyezés nem helyettesíti a későbbi verziókezelést.
 
@@ -58,5 +58,71 @@ A best_match beállításnál a szolgáltató választ időjárási modellt. Ez 
 Az időjárás külön sorban szerepel az órás összesítésben, óránként négy tervezett lekéréssel. A régi pontok és a hiányzó értékek száma kérésenként összeadódik. Feldolgozáskor az azonos térséghez és adat-időponthoz tartozó csapadékot nem szabad többször összeadni. Az időjárás kiegészítő magyarázat, nem bizonyíték arra, hogy az eső okozta a késést. A három pont térségi közelítés, nem minden megálló külön időjárása.
 
 A három első elemzés a napszakok és napok közti eltérés, a vonal mentén felhalmozódó késés és a sűrű járatok követési ideje. A saját bővítés a közös cél felé közlekedő, egymást helyettesítő járatok együttes utasvárakozása. Az adatokból születő külön saját kérdés még nyitott. Minden eredmény mellé megfigyelésszám és adatlefedettség kell.
+
+## Adatbázisba töltés
+
+A `betolto.py` a kész nyers fájlokat és naplókat olvassa, a gyűjtőtől külön fut.
+A teljes nyers mentés megmarad. A menetrendi és valós idejű menetadatoknál a kijelölt tíz vonal és a H8 kerül táblákba.
+A fel nem oldott vonalú megfigyeléseket is megtartom, külön jelöléssel. A zavarok teljes köre és a kis statikus megállólista is bent van.
+Az időjárás mindhárom kijelölt pontra megmarad.
+
+A szerveres betöltés ötpercenként legfeljebb 100 új naplót vesz sorra. A korábbiakat átugorja,
+így lemaradás után a következő adaggal folytatja. A gyűjtő közben önállóan ment tovább.
+Az adatbázisról naponta külön mentés készül; a kész fájlt az óránkénti felhőmentés is felviszi.
+A mentés visszaállítását külön próba-adatbázisban ellenőriztem. A két mentés közti időszak a nyers fájlokból újra betölthető.
+
+Tíz tábla van, az órás adatminőség külön számított nézet.
+
+| Tábla | Mit tárol | Azonosító és kapcsolat |
+| --- | --- | --- |
+| `nyers_fajl` | Eredeti fájl helye, ellenőrző összege, forrásideje; a menetrendi ZIP-nél verzió, érvényesség és időzóna is | A forrás + SHA256 egyedi. Saját számos azonosítója van. |
+| `lekeres` | Minden lekérési kísérlet, ideje és eredménye | A napló UUID-je a kulcs; sikeres válasz esetén a nyers fájlhoz kapcsolódik. |
+| `vonal` | A kiválasztott vonalak neve és típusa | Menetrendi fájl + eredeti vonalazonosító. |
+| `megallo` | Megállók neve és helye | Menetrendi fájl + eredeti megállóazonosító. |
+| `menet` | Tervezett menet, irány és közlekedési napok | Menetrendi fájl + menetazonosító; a vonalhoz kapcsolódik. A `napok` dátumlista. |
+| `megallasi_ido` | Megállósorrend, tervezett érkezés és indulás | Változat + menet + sorrend; megállóra hivatkozik. Ugyanaz a megálló több helyen is szerepelhet. |
+| `megfigyeles` | Egy válasz járműhelyzete vagy menetfrissítése | Nyers fájl + elemsorrend; a menetrendi jelölt és a vonal feloldása külön megmarad. |
+| `megallo_frissites` | A menetfrissítés megállónkénti időpontjai, késései és állapotai | Megfigyelés + a megállófrissítés elemsorrendje. |
+| `zavar` | Zavarszöveg, időszakok és érintettek | Nyers fájl + elemsorrend; az időszakok és érintettek JSON-listák. |
+| `idojaras` | Modellértékek, időpont, időtartam, koordináták, egységek | Nyers fájl + térség. Az azonos időpontra érkező módosított érték is megmarad. |
+| `adatminoseg` | Órás darabszámok, hibák és szünetek | Nézet a betöltött naplókból, forrásonként és UTC-óránként. |
+
+A menetrend a heti naptárból és a napi kivételekből áll össze; a csak kivételekkel megadott napokat is kezeli.
+A közlekedési napok rendezett `DATE[]` listaként kerülnek minden menethez. Egy nap ellenőrzése például
+`DATE '2026-10-17' = ANY(napok)`; a napok külön sorokká is bonthatók az `unnest(napok)` kifejezéssel.
+A `menetrend_id` a menetrendi ZIP `nyers_fajl.id` azonosítójára mutat, így a hosszú SHA256-értéket nem kell minden sorban ismételni.
+A BKK azonosítói szövegek, a kezdő nullák megmaradnak. A menetrendi idő eredeti szövege és másodperce is bent van,
+így például a `25:10:00` értelmezhető. UTC-re számításkor a szolgáltatási nap és a helyi időzóna számít.
+A `frequencies.txt` alapján megadott követés betöltése még nem támogatott: ilyen kiválasztott menetnél egyértelműen megáll.
+A mostani BKK-menetrendben nincs ilyen fájl.
+
+A betöltő ellenőrzi a nyers fájl SHA256-összegét. Ez a fájl tartalmából számolt ellenőrző érték.
+Egy napló UUID-je csak egyszer kerül be;
+ha ugyanazt a naplót utólag átírnák, azt nem fogadja el észrevétlenül. Egy napló feldolgozása egy tranzakció,
+így hiba esetén abból nem marad félkész adat. A korábban sikeresen betöltött naplók megmaradnak.
+Ugyanazt a teljes nyers választ csak egyszer bontom táblákra, az ismételt lekérései külön sorok maradnak.
+Különböző válaszokban egy változatlan jármű vagy menetfrissítés ismétlődhet: ezek külön megfigyelések.
+Ez könnyebben követhető, de a megállófrissítések több helyet foglalhatnak. A teljes betöltés előtt a növekedést mérni kell.
+
+A napló `ismert_menetrend_sha256` mezője azt mutatja, melyik menetrend volt ismert a gyűjtéskor.
+A `--menetrend` kapcsolóval megadott ZIP ennek hiányában utólagos jelölt a menetazonosító feloldásához.
+Mindkét esetben jelölt kapcsolatról van szó; a helyes szolgáltatói verziót az azonosítóegyezés önmagában nem bizonyítja.
+Az eredeti naplómező, a jelölt és a feloldás eredménye külön marad.
+Ugyanaz a nyers válasz az első betöltéskor kap jelöltet. Ha egy későbbi lekérés már másik menetrendet ismer,
+az a lekérés saját sorában megmarad, de a korábban betöltött megfigyelést nem írja át.
+
+A megállófrissítések továbbra is előrejelzések, nem igazolt indulások.
+A `NO_DATA`, `SKIPPED`, `CANCELED` állapotokat későbbi számításkor figyelembe kell venni,
+akkor is, ha mellettük van kitöltött időpont. Az `ADDED` menetnek nem kötelező szerepelnie a statikus menetrendben.
+A hiányzó táblamező `NULL` marad; a számszerű nulla külön érték. A zavar JSON-listái az eredeti GTFS-mezőneveket őrzik.
+Ezekben a hiányzó mező kimarad, a megadott nulla megmarad; az állapotkódok számok, a 64 bites időbélyegek szövegek.
+Egy érintettségi elem feltételei együtt érvényesek, a külön elemek alternatívák.
+A nem támogatott növekményes feed jelzést kap, a nyers fájl megmarad.
+
+Az SQL-es `adatminoseg` csak a betöltött naplókat látja. Az első betöltött kérés órájától az ellenőrzés idejéig
+az üres órákat és a folyó szüneteket is kiírja. Egy régi, véges minta után ezért nagy szünet látszik;
+ez önmagában nem jelenti, hogy a szerveres gyűjtő áll. A jármű- és menetszám itt is órás pillanatkép-maximum.
+Az első betöltőváltozat szűrése rögzített. Más vonalkör vagy feldolgozási szabály esetén új adatbázisba kell újra betölteni
+a megtartott nyers fájlokat; a korábbi eredményeket nem írja át magától.
 
 Források: [BKK](https://opendata.bkk.hu/data-sources), [GTFS Realtime](https://gtfs.org/documentation/realtime/reference/), [GTFS menetrend](https://gtfs.org/documentation/schedule/reference/), [Open-Meteo leírás](https://open-meteo.com/en/docs), [ingyenes használat](https://open-meteo.com/en/terms), [keretek](https://open-meteo.com/en/pricing), [több hely számlálása](https://github.com/open-meteo/open-meteo/issues/1295). Időjárási adatok: Open-Meteo, CC BY 4.0.

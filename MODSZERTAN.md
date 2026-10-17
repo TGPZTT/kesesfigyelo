@@ -62,7 +62,8 @@ A három első elemzés a napszakok és napok közti eltérés, a vonal mentén 
 ## Adatbázisba töltés
 
 A `betolto.py` a kész nyers fájlokat és naplókat olvassa, a gyűjtőtől külön fut.
-A teljes nyers mentés megmarad. A menetrendi és valós idejű menetadatoknál a kijelölt tíz vonal és a H8 kerül táblákba.
+A teljes nyers mentés megmarad. A menetrendi menetadatoknál a kijelölt tíz vonal, a H8 és a pótlóvonalak kerülnek táblákba.
+A valós idejű adatokból az ellenőrzendő új meneteket és ismeretlen vonalakat is megtartom.
 A fel nem oldott vonalú megfigyeléseket is megtartom, külön jelöléssel. A zavarok teljes köre és a kis statikus megállólista is bent van.
 Az időjárás mindhárom kijelölt pontra megmarad.
 
@@ -77,11 +78,11 @@ Tíz tábla van, az órás adatminőség külön számított nézet.
 | --- | --- | --- |
 | `nyers_fajl` | Eredeti fájl helye, ellenőrző összege, forrásideje; a menetrendi ZIP-nél verzió, érvényesség és időzóna is | A forrás + SHA256 egyedi. Saját számos azonosítója van. |
 | `lekeres` | Minden lekérési kísérlet, ideje és eredménye | A napló UUID-je a kulcs; sikeres válasz esetén a nyers fájlhoz kapcsolódik. |
-| `vonal` | A kiválasztott vonalak neve és típusa | Menetrendi fájl + eredeti vonalazonosító. |
+| `vonal` | A teljes kis vonaljegyzék nevekkel és típusokkal | Menetrendi fájl + eredeti vonalazonosító. |
 | `megallo` | Megállók neve és helye | Menetrendi fájl + eredeti megállóazonosító. |
 | `menet` | Tervezett menet, irány és közlekedési napok | Menetrendi fájl + menetazonosító; a vonalhoz kapcsolódik. A `napok` dátumlista. |
 | `megallasi_ido` | Megállósorrend, tervezett érkezés és indulás | Változat + menet + sorrend; megállóra hivatkozik. Ugyanaz a megálló több helyen is szerepelhet. |
-| `megfigyeles` | Egy válasz járműhelyzete vagy menetfrissítése | Nyers fájl + elemsorrend; a menetrendi jelölt és a vonal feloldása külön megmarad. |
+| `megfigyeles` | Egy válasz járműhelyzete vagy menetfrissítése, pótlásjelzéssel | Nyers fájl + elemsorrend; a menetrendi jelölt és a vonal feloldása külön megmarad. |
 | `megallo_frissites` | A menetfrissítés megállónkénti időpontjai, késései és állapotai | Megfigyelés + a megállófrissítés elemsorrendje. |
 | `zavar` | Zavarszöveg, időszakok és érintettek | Nyers fájl + elemsorrend; az időszakok és érintettek JSON-listák. |
 | `idojaras` | Modellértékek, időpont, időtartam, koordináták, egységek | Nyers fájl + térség. Az azonos időpontra érkező módosított érték is megmarad. |
@@ -122,7 +123,30 @@ A nem támogatott növekményes feed jelzést kap, a nyers fájl megmarad.
 Az SQL-es `adatminoseg` csak a betöltött naplókat látja. Az első betöltött kérés órájától az ellenőrzés idejéig
 az üres órákat és a folyó szüneteket is kiírja. Egy régi, véges minta után ezért nagy szünet látszik;
 ez önmagában nem jelenti, hogy a szerveres gyűjtő áll. A jármű- és menetszám itt is órás pillanatkép-maximum.
-Az első betöltőváltozat szűrése rögzített. Más vonalkör vagy feldolgozási szabály esetén új adatbázisba kell újra betölteni
+### Pótlóbuszok
+
+A teljes vonaljegyzéket megtartom. A kijelölt vonalakon kívül a pótlóvonalak menetei és megfigyelései is bekerülnek.
+A mostani BKK-mintában például `VP03` a 3-as, `VP46` a 4–6-os jelzésű busz.
+A `vonal_id` mindig az eredeti vonal marad, nem írom át a villamoséra.
+A `potolt_vonal_id` a kijelölt villamos, troli vagy HÉV névegyezésből kapott kapcsolatjelöltje.
+A 4-es és 6-os jelzést a közösen vizsgált 4–6-hoz sorolom. Több lehetséges kapcsolatnál ez a mező üres.
+
+| `potlas_jelzes` | Mit jelent |
+| --- | --- |
+| `potlovonal` | Busz a menetrendben VP/TP/MP/HP kezdetű BKK-azonosítóval, vagy GTFS 714-es pótlóbusztípussal. |
+| `azonos_nev_jelolt` | Egy kijelölt villamossal, trolival vagy HÉV-vel azonos nevű busz; önmagában nem bizonyított pótlás. |
+| `vonaljel_jelolt` | A valós idejű válaszban pótlásra utaló BKK-azonosító, amely még nincs a menetrendben. |
+| `uj_menet_jelolt` | Egyéb, nem kijelölt vonal új, hozzáadott, menetrend nélküli, másolt vagy lecserélt menete; nem biztos, hogy pótlóbusz. |
+| `ismeretlen_vonal` | Van ismert menetrend, de ez a vonal még hiányzik belőle; megmarad ellenőrzésre. |
+| üres | Nem kaptunk külön pótlásjelzést. Ez nem bizonyítja, hogy biztosan rendes közlekedés volt. |
+
+A BKK-azonosítók előtagja a megfigyelt elnevezés, nem általános GTFS-szabály.
+Az új és bizonytalan jelölteket nem számolom automatikusan a pótolt vonal indulásának vagy késésének.
+Az Alerts szövege, időszaka és érintettsége segít ellenőrizni a kapcsolatot; puszta közös zavarjelzésből nem állítok pótlást.
+Ha egy ismert, szokásos másik buszvonal menete kap pótlási feladatot külön jelzés nélkül, ezt ebből a szűrésből nem lehet felismerni.
+A teljes nyers válasz ilyenkor is megmarad. A kapcsolatok utólag pontosíthatók; az új jelölés visszatöltéséhez új adatbázist használok.
+
+A betöltő szűrése rögzített. Más vonalkör vagy feldolgozási szabály esetén új adatbázisba kell újra betölteni
 a megtartott nyers fájlokat; a korábbi eredményeket nem írja át magától.
 
 Források: [BKK](https://opendata.bkk.hu/data-sources), [GTFS Realtime](https://gtfs.org/documentation/realtime/reference/), [GTFS menetrend](https://gtfs.org/documentation/schedule/reference/), [Open-Meteo leírás](https://open-meteo.com/en/docs), [ingyenes használat](https://open-meteo.com/en/terms), [keretek](https://open-meteo.com/en/pricing), [több hely számlálása](https://github.com/open-meteo/open-meteo/issues/1295). Időjárási adatok: Open-Meteo, CC BY 4.0.

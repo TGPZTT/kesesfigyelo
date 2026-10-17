@@ -74,6 +74,32 @@ VONALAK = {
 }
 
 
+def potlo_vonalak(vonalak):
+    # A pótlásra utaló BKK-előtagot és a menetrendi nevet nézzük.
+    eredeti = {}
+    for azonosito, nev, tipus in vonalak:
+        if (azonosito in VONALAK and nev and tipus is not None
+                and tipus != 3 and not 700 <= tipus < 800):
+            eredeti.setdefault(nev, []).append(azonosito)
+    if "4-6" in eredeti:
+        eredeti.setdefault("4", eredeti["4-6"])
+        eredeti.setdefault("6", eredeti["4-6"])
+    potlok = {}
+    for azonosito, nev, tipus in vonalak:
+        if tipus != 3 and not (tipus is not None and 700 <= tipus < 800):
+            continue
+        jelzes = None
+        if azonosito.startswith(("VP", "TP", "MP", "HP")) or tipus == 714:
+            jelzes = "potlovonal"
+        elif nev in eredeti:
+            jelzes = "azonos_nev_jelolt"
+        if jelzes:
+            parok = eredeti.get(nev, [])
+            # A névegyezés kapcsolatjelölt. Több találatból nem választunk.
+            potlok[azonosito] = (parok[0] if len(parok) == 1 else None, jelzes)
+    return potlok
+
+
 def ido_mp(szoveg):
     """A menetrendben az óra 24-nél nagyobb is lehet."""
     if szoveg is None or not szoveg.strip():
@@ -196,13 +222,15 @@ def menetrend_betolt(conn, utvonal, sha256):
             if infosorok:
                 info = infosorok[0]
 
-        # Csak a kiválasztott vonalak meneteit és megállási idejét töltjük be.
-        vonalak = [s for s in _csv_sorok(csomag, "routes.txt")
-                   if s["route_id"] in VONALAK]
-        if not vonalak:
+        # A vonaljegyzék kicsi. A menetekből csak a kijelölt és pótló vonalak kellenek.
+        vonalak = list(_csv_sorok(csomag, "routes.txt"))
+        if not any(s["route_id"] in VONALAK for s in vonalak):
             raise ValueError("A kiválasztott vonalak nincsenek a menetrendben.")
+        potlok = potlo_vonalak([(s["route_id"], s.get("route_short_name") or s.get("route_long_name"),
+                                _szam(s.get("route_type"))) for s in vonalak])
+        kivalasztott = VONALAK | potlok.keys()
         menetek = [s for s in _csv_sorok(csomag, "trips.txt")
-                   if s["route_id"] in VONALAK]
+                   if s["route_id"] in kivalasztott]
         menetazonositok = {s["trip_id"] for s in menetek}
         if len(menetazonositok) != len(menetek):
             raise ValueError("Ismétlődő menetazonosító a menetrendben.")
@@ -265,13 +293,15 @@ def zavar_betolt(conn, nyers_id, sorrend, elem):
     })
 
 
-def megfigyeles_betolt(conn, nyers_id, sorrend, elem, tipus, menetrend_id, vonal, feloldas):
+def megfigyeles_betolt(conn, nyers_id, sorrend, elem, tipus, menetrend_id, vonal, feloldas,
+                      potolt=None, potlas_jelzes=None):
     # A két forrás közös menetadatai egy helyre kerülnek.
     adat = getattr(elem, tipus)
     menet = adat.trip
     sor = {
         "nyers_id": nyers_id, "sorrend": sorrend, "elem_id": elem.id, "tipus": tipus,
         "menetrend_id": menetrend_id, "vonal_id": vonal, "feloldas": feloldas,
+        "potolt_vonal_id": potolt, "potlas_jelzes": potlas_jelzes,
         "forras_vonal_id": mezo(menet, "route_id"), "menet_id": mezo(menet, "trip_id"),
         "szolgalati_nap": _datum(mezo(menet, "start_date")),
         "kezdes": mezo(menet, "start_time"), "irany": mezo(menet, "direction_id"),
@@ -332,6 +362,10 @@ def rt_betolt(conn, nyers_id, payload, forras, jelolt=None):
     statikus = dict(conn.execute(
         "SELECT menet_id, vonal_id FROM menet WHERE menetrend_id=%s", (menetrend_id,)
     ).fetchall()) if menetrend_id else {}
+    vonalak = conn.execute("SELECT vonal_id, nev, tipus FROM vonal WHERE menetrend_id=%s",
+                           (menetrend_id,)).fetchall() if menetrend_id else []
+    ismert_vonalak = {s[0] for s in vonalak}
+    potlok = potlo_vonalak(vonalak)
     tipus = {"VehiclePositions": "vehicle", "TripUpdates": "trip_update", "Alerts": "alert"}[forras]
     kihagyott = 0
     # Egy sor egy mentett válasz egy eleme. Ugyanazt a fájlt nem töltjük be kétszer.
@@ -351,10 +385,24 @@ def rt_betolt(conn, nyers_id, payload, forras, jelolt=None):
             if par:
                 feloldas = "menetrendi_jelolt" if not vonal or vonal == par else "eltero_vonal"
                 vonal = vonal or par
-            if vonal and vonal not in VONALAK:
+            potolt, jelzes = potlok.get(vonal, (None, None))
+            allapot = mezo(adat.trip, "schedule_relationship")
+            if not jelzes and vonal and vonal not in VONALAK:
+                if vonal.startswith(("VP", "TP", "MP", "HP")):
+                    jelzes = "vonaljel_jelolt"
+                elif allapot in (gtfs_realtime_pb2.TripDescriptor.ADDED,
+                                  gtfs_realtime_pb2.TripDescriptor.UNSCHEDULED,
+                                  gtfs_realtime_pb2.TripDescriptor.REPLACEMENT,
+                                  gtfs_realtime_pb2.TripDescriptor.DUPLICATED,
+                                  gtfs_realtime_pb2.TripDescriptor.NEW):
+                    jelzes = "uj_menet_jelolt"
+                elif menetrend_id and vonal not in ismert_vonalak:
+                    jelzes = "ismeretlen_vonal"
+            if vonal and vonal not in VONALAK and not jelzes:
                 kihagyott += 1
                 continue
-            megfigyeles_betolt(conn, nyers_id, i, elem, tipus, menetrend_id, vonal, feloldas)
+            megfigyeles_betolt(conn, nyers_id, i, elem, tipus, menetrend_id, vonal, feloldas,
+                              potolt, jelzes)
     conn.execute("UPDATE nyers_fajl SET feldolgozva=true, kihagyott=%s WHERE id=%s",
                  (kihagyott, nyers_id))
 

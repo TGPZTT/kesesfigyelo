@@ -77,6 +77,23 @@ def kis_idojaras(ido=1792152000):
 
 
 class IdoProba(unittest.TestCase):
+    def test_potlas_nevegyezes_nem_bizonyit_kapcsolatot(self):
+        vonalak = [("3046", "4-6", 0), ("3030", "3", 0), ("VP46", "4-6", 3),
+                   ("VP52", "52", 3), ("MAS3", "3", 3), ("714", "Másik", 714),
+                   ("SHUTTLE", "Repülőtér", 711), ("VP04", "4", 3), ("VP06", "6", 3),
+                   ("0460", "46", 3), ("BUSZ46", "46", 3)]
+        potlok = betolto.potlo_vonalak(vonalak)
+        self.assertEqual(potlok["VP46"], ("3046", "potlovonal"))
+        self.assertEqual(potlok["VP52"], (None, "potlovonal"))
+        self.assertEqual(potlok["MAS3"], ("3030", "azonos_nev_jelolt"))
+        self.assertNotIn("BUSZ46", potlok)
+        self.assertEqual(potlok["714"], (None, "potlovonal"))
+        self.assertNotIn("SHUTTLE", potlok)
+        self.assertEqual(potlok["VP04"], ("3046", "potlovonal"))
+        self.assertEqual(potlok["VP06"], ("3046", "potlovonal"))
+        kettes = [("3020", "2", 0), ("3030", "2", 0), ("VP02", "2", 3)]
+        self.assertEqual(betolto.potlo_vonalak(kettes)["VP02"], (None, "potlovonal"))
+
     def test_hianyzo_es_24_ora_feletti_ido(self):
         self.assertIsNone(betolto.ido_mp(None))
         self.assertIsNone(betolto.ido_mp(""))
@@ -176,8 +193,8 @@ class AdatbazisProba(unittest.TestCase):
             "SELECT forras, sha256, menetrend_verzio, ervenyes_tol, ervenyes_ig, idozona "
             "FROM nyers_fajl WHERE id = %s", (menetrend_id,),
         ), ("Menetrend", sha, "egy", date(2026, 10, 16), date(2026, 10, 19), "Europe/Budapest"))
-        self.assertEqual(self.sor("SELECT count(*) FROM vonal"), (1,))
-        self.assertEqual(self.sor("SELECT vonal_id FROM vonal"), ("0460",))
+        self.assertEqual(self.sor("SELECT count(*) FROM vonal"), (2,))
+        self.assertEqual(self.sor("SELECT vonal_id FROM menet"), ("0460",))
         self.assertEqual(self.sor("SELECT count(*) FROM megallasi_ido WHERE megallo_id = '001'"), (2,))
         self.assertEqual(self.sor("SELECT indulas_mp, indulas FROM megallasi_ido WHERE sorrend = 3"), (86610, "24:03:30"))
         self.assertEqual(self.sor("SELECT indulas_mp FROM megallasi_ido WHERE sorrend = 2"), (None,))
@@ -344,6 +361,47 @@ class AdatbazisProba(unittest.TestCase):
                          (None, "jarmu-1", 47.5, None, None))
         self.assertEqual(self.sor("SELECT kihagyott FROM nyers_fajl"), (1,))
         self.assertEqual(self.sor("SELECT jarmuvek FROM lekeres"), (2,))
+
+    def test_potlo_vonal_menetrendje_es_mindket_valos_ideju_forras(self):
+        sha, _, _ = self.menetrend(plusz={
+            "routes.txt": "route_id,route_short_name,route_type\n0460,46,3\n3030,3,0\nVP03,3,3\n9999,999,3\n",
+            "trips.txt": "route_id,service_id,trip_id,direction_id\n0460,S01,T001,0\nVP03,S01,POTLO,0\n9999,S99,T999,1\n",
+            "stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\nT001,10:00:00,10:00:00,001,1\nPOTLO,10:01:00,10:01:00,001,1\n",
+        })
+        self.assertEqual(self.sor("SELECT count(*) FROM menet WHERE vonal_id='VP03'"), (1,))
+        for forras in ("VehiclePositions", "TripUpdates"):
+            feed = kis_feed(forras)
+            adat = feed.entity[0].vehicle if forras == "VehiclePositions" else feed.entity[0].trip_update
+            adat.trip.trip_id = "POTLO"
+            # A járműhelyzetnél a menetrendből is feloldható a pótlóbusz.
+            adat.trip.ClearField("route_id")
+            self.betolt(self.naplo(forras, feed.SerializeToString(), menetrend=sha))
+        self.assertEqual(self.conn.execute(
+            "SELECT vonal_id, potolt_vonal_id, potlas_jelzes FROM megfigyeles ORDER BY tipus"
+        ).fetchall(), [("VP03", "3030", "potlovonal"), ("VP03", "3030", "potlovonal")])
+
+    def test_uj_es_ismeretlen_potlasjeloltek_nem_vesznek_el(self):
+        sha, _, _ = self.menetrend()
+        feed = kis_feed()
+        for route, state in [("VP99", 0), ("UJ99", 0), ("9999", pb.TripDescriptor.ADDED),
+                             ("9999", pb.TripDescriptor.UNSCHEDULED),
+                             ("9999", pb.TripDescriptor.REPLACEMENT),
+                             ("9999", pb.TripDescriptor.DUPLICATED),
+                             ("9999", pb.TripDescriptor.NEW), ("9999", 0)]:
+            elem = feed.entity.add()
+            elem.id = route + "-" + str(state)
+            elem.trip_update.trip.trip_id = elem.id
+            elem.trip_update.trip.route_id = route
+            elem.trip_update.trip.schedule_relationship = state
+        log = self.naplo("TripUpdates", feed.SerializeToString(), menetrend=sha)
+        self.assertTrue(self.betolt(log))
+        self.assertFalse(self.betolt(log))
+        self.assertEqual(self.sor("SELECT count(*) FROM megfigyeles"), (8,))
+        self.assertEqual(self.sor("SELECT kihagyott FROM nyers_fajl WHERE forras='TripUpdates'"), (1,))
+        self.assertEqual(self.sor("SELECT potlas_jelzes, potolt_vonal_id FROM megfigyeles WHERE vonal_id='VP99'"),
+                         ("vonaljel_jelolt", None))
+        self.assertEqual(self.sor("SELECT potlas_jelzes FROM megfigyeles WHERE vonal_id='UJ99'"), ("ismeretlen_vonal",))
+        self.assertEqual(self.sor("SELECT count(*) FROM megfigyeles WHERE potlas_jelzes='uj_menet_jelolt'"), (5,))
 
     def test_statika_feloldja_a_vonalat_de_csak_jelolt_marad(self):
         sha, _, eredmeny = self.menetrend()

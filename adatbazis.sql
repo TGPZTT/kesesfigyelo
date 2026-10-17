@@ -100,6 +100,8 @@ CREATE TABLE IF NOT EXISTS megfigyeles (
     vonal_id TEXT, -- A megadott vagy a menetrendből feloldott vonal.
     menetrend_id BIGINT REFERENCES nyers_fajl (id),
     feloldas TEXT, -- Honnan ismert a vonal, vagy miért nem sikerült feloldani.
+    potolt_vonal_id TEXT, -- Névegyezésből kapott kapcsolatjelölt; több találatnál NULL.
+    potlas_jelzes TEXT, -- Pótlóvonal vagy ellenőrzendő jelölt; a módszertan felsorolja az értékeket.
     menet_id TEXT,
     szolgalati_nap DATE, -- A menet napja; éjfél után eltérhet a naptári naptól.
     kezdes TEXT, -- A menet forrás szerinti kezdőideje, ha szerepel.

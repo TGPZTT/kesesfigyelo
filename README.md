@@ -38,6 +38,8 @@ PostgreSQL 18.6-tal kipróbálva. A betöltő a már mentett fájlokat olvassa,
 nem kér új BKK- vagy időjárási adatot. Egy futás véges, alapból legfeljebb 20 új naplót tölt be.
 Kapcsolók nélkül csak a súgót írja ki.
 Tíz tábla és egy adatminőség-nézet készül; a táblázatos séma a [módszertanban](MODSZERTAN.md#adatbázisba-töltés) van.
+A pótlóbuszok és az ellenőrzendő új menetek is bekerülnek, külön `potlas_jelzes` mezővel.
+A `potolt_vonal_id` névegyezésből kapott kapcsolatjelölt, az eredeti buszazonosító megmarad.
 
 A `.env.example` PG-vel kezdődő sorait másold a helyi `.env.db` fájlba,
 és add meg az adatbázis jelszavát. A BKK-kulcs külön, a `.env.bkk` fájlban marad.

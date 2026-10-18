@@ -1,6 +1,43 @@
 # Módszertan
 
-A gyűjtő és az adatbázis a szerveren fut, a háromnapos folyamatos gyűjtés ellenőrzése még tart. A betöltő külön fut, a késésszámítás még hátravan. Az eredeti válaszokat megtartom, hogy később vissza lehessen nézni, miből számoltam.
+## Mit akarok megtudni?
+
+A kérdés az, hogy melyik vonalon, mikor és hol romlik a közlekedés, és ez mennyi plusz várakozást jelent.
+A menetrendi késés önmagában nem elég: egy öt percet késő, de szabályosan érkező villamossor más helyzet,
+mint két egymás mögött érkező villamos és az utánuk maradó hosszú szünet.
+
+A BKK válasza nem kész induláslista. Ugyanahhoz az induláshoz sok, időközben változó becslés tartozhat.
+Először ezekből kell megállapítani, mit tudunk az indulásról. Utána lehet késést és várakozást számolni.
+A bizonytalan és hiányzó esetek darabszáma az eredmény mellett is megmarad.
+
+## Röviden a fogalmakról
+
+| Fogalom | Mit jelent itt? |
+| --- | --- |
+| Vonal | Például a 97E vagy a közösen vizsgált 4–6. Egy vonalon sok menet közlekedik. |
+| Menet | A vonal egy konkrét végighaladása, egy adott szolgálati napon és irányban. Nem azonos a járművel. |
+| Jármű | A busz, villamos vagy troli. Ugyanaz a jármű egymás után több menetet is teljesíthet. |
+| Megállói indulás | Egy menet indulása egy meghatározott megállóból. A megálló sorszáma is számít, mert egy menet visszatérhet ugyanoda. |
+| Megfigyelés | Egy mentett válasz egy eleme. Sok megfigyelés szólhat ugyanarról az indulásról. |
+| Becslés | A szolgáltató által közölt várható idő. Később változhat; a nulla bizonytalanság sem önálló bizonyíték az indulásra. |
+| Szolgálati nap | A menet menetrendi napja. A szombati `25:10:00` vasárnap hajnali 01:10-et jelent. |
+| Késés | A megállapított indulás és a menetrendi indulás különbsége. A negatív érték korai indulás. |
+| Követési idő | Két egymást követő indulás közti idő ugyanabban a megállóban, irányban és összehasonlítható járatcsoportban. |
+| Plusz várakozás | A számított tényleges és menetrendi várakozás különbsége. Ez utasmodellből kapott érték, nem mért utasadat. |
+| Lefedettség | Mennyi tervezett indulásról, illetve mekkora időszakról van használható adat. |
+| Medián és 90. percentilis | A mediánnál az értékek fele kisebb vagy egyenlő. A 90. percentilisnél ez az arány 90%. |
+
+A korai érkezés és a korai indulás külön dolog. A jármű megérkezhet korábban, majd kivárhatja az indulását.
+Az utas számára az a probléma, ha már a meghirdetett indulás előtt elmegy. A negatív késést ezért nem írom át nullára.
+
+## Gyűjtés
+
+A gyűjtő és az adatbázis a szerveren fut. A betöltő külön dolgozik, az elemző csak a mentett adatokat olvassa.
+Az eredeti válaszokat megtartom, hogy később vissza lehessen nézni, miből számoltam.
+
+Október 18-án 19:17–19:30 között a VPS leállása miatt kimaradt a gyűjtés. A járműhelyzeteknél és menetfrissítéseknél
+13 perc telt el két sikeres kérés között. Indulás után a gyűjtés magától folytatódott, a korábbi fájlok megmaradtak.
+A hiányzó időszakot nem pótolom becsléssel; az adatminőségi kimutatásban és az érintett elemzéseknél látszania kell.
 
 A VehiclePositions és a TripUpdates tervezett lekérése 30, az Alertsé 60 másodpercenként történik. A félperces minta a megállók közti mozgás követéséhez kell; a ritkábban változó zavarjelzésekhez egy percet választottam. A menetrendet naponta ellenőrzöm, a ZIP változatait megtartom. Ezek saját beállítások, nem a BKK által megadott kvóták. Két kérés kezdete között legalább 10 másodperc van, lassulás után nincs gyors pótlás. A letöltések egymás után futnak, ezért egy lassú válasz késleltetheti a következőt; ez a naplóban látszik.
 
@@ -10,7 +47,7 @@ Hálózati hibánál vár, ismétlődő BKK-hibánál egyre többet. A szerver �
 
 A legfontosabb buktató, hogy a TripUpdates időpontja lehet előrejelzés. Attól, hogy az időpont már elmúlt, még nem biztos, hogy akkor indult el a jármű. A hiányzó adatot nem veszem nulla késésnek. A NO_DATA, a SKIPPED és a CANCELED külön állapot. Az ADDED menet jogosan hiányozhat a statikus menetrendből. Az eltűnő menet önmagában nem bizonyít törlést. Sok egymás utáni járműpozíció sem jelent sok külön indulást.
 
-Külön mentem a lekérés és a forrásadat időpontját, UTC szerint. Feldolgozáskor figyelni kell a szolgáltatási napra, a megállósorrendre, a 24 órán túli menetrendi időkre és az óraátállításra. A legutóbb letöltött menetrend és a valós idejű adat verzióját még össze kell egyeztetni.
+Külön mentem a lekérés és a forrásadat időpontját, UTC szerint. Feldolgozáskor figyelni kell a szolgáltatási napra, a megállósorrendre, a 24 órán túli menetrendi időkre és az óraátállításra. Az elemzés előtt a menetrendváltozatokat is össze kell vetni.
 
 Az órás összesítés most a gyűjtés ellenőrzésére való. A siker azt jelenti, hogy a választ elmentettem és a formátumát ellenőriztem. Ettől még lehet régi a tartalma, ezt külön jelzem. A járművek és menetfrissítések darabszáma az órán belüli legnagyobb pillanatnyi érték, nem egyedi járművek vagy indulások száma. A teljes órára tervezett darabszám csak viszonyítás, egy fél órája futó gyűjtésnél nem elvárt teljesítmény.
 
@@ -37,7 +74,7 @@ A 2026. október 16-án letöltött 2802.20261016 menetrendben ellenőrzött azo
 
 Mind a tíz vonal aktív október 16-án és 17-én. A 4–6 október 16-án Újbuda-központból (F01998) Széll Kálmán tér felé 07:01, 07:03, 07:05 és 07:07-kor indul: ez kétperces követés. Október 17-én az ellenkező irányban, Széll Kálmán térről (F02477) 07:00, 07:04, 07:08 és 07:12 szerepel. A napi kivételeket is figyelembe vettem. Ez az adott megállóra és időszakra igaz, nem egész napos garancia. A sima 4-es 3040 és a pótlóbusz VP46 más azonosító, ezeken a napokon egyik sem aktív.
 
-A H8 menetrendje október 17-én főleg Cinkota–Gödöllő meneteket tartalmaz. A megváltozott útvonalat nem szabad menetrendi kimaradásnak nézni. A gyűjtő a teljes feedeket menti, a vonalszűrés az adatbázisba töltéskor történik. A tényleges indulások meghatározása a következő feldolgozási lépés.
+A H8 menetrendje október 17-én főleg Cinkota–Gödöllő meneteket tartalmaz. A megváltozott útvonalat nem szabad menetrendi kimaradásnak nézni. A gyűjtő a teljes feedeket menti, a vonalszűrés az adatbázisba töltéskor történik. Az indulások meghatározása külön feldolgozási lépés, nem a betöltő feladata.
 
 Az október 16-i 17:47 UTC körüli egyszeri mintában mind a tíz vonal jelen volt a pozíciók és a menetfrissítések között. A H8-nál 5 jármű és 16 menetfrissítés látszott, az azonosítóik egyeztek a mentett menetrenddel. A TripUpdates fejlécének kora kb. 5 másodperc volt, mégis 16 H8-menetből 15 saját időbélyege 90 másodpercnél régebbi. Az éppen látható 5 jármű meneteinél ez 52–178 másodperc volt. Ez nem önmagában üzemkiesés: a fejléc, a jármű és az egyes menetek frissességét külön kell nézni. A feed nem adott menetrend-verziót; az azonosítóegyezés nem helyettesíti a későbbi verziókezelést.
 
@@ -57,7 +94,117 @@ A best_match beállításnál a szolgáltató választ időjárási modellt. Ez 
 
 Az időjárás külön sorban szerepel az órás összesítésben, óránként négy tervezett lekéréssel. A régi pontok és a hiányzó értékek száma kérésenként összeadódik. Feldolgozáskor az azonos térséghez és adat-időponthoz tartozó csapadékot nem szabad többször összeadni. Az időjárás kiegészítő magyarázat, nem bizonyíték arra, hogy az eső okozta a késést. A három pont térségi közelítés, nem minden megálló külön időjárása.
 
-A három első elemzés a napszakok és napok közti eltérés, a vonal mentén felhalmozódó késés és a sűrű járatok követési ideje. A saját bővítés a közös cél felé közlekedő, egymást helyettesítő járatok együttes utasvárakozása. Az adatokból születő külön saját kérdés még nyitott. Minden eredmény mellé megfigyelésszám és adatlefedettség kell.
+A három tervezett elemzés a napszakok és napok közti eltérés, a vonal mentén felhalmozódó késés és a sűrű járatok követési ideje.
+A saját kérdés: ha a közölt időpont szerint korábban érkezett a jármű, kivárta-e a menetrendi indulását?
+Ehhez a stabil érkezési közlést és a továbbhaladással ellenőrzött indulást együtt nézem.
+A saját bővítés a 97E, 161 és 169E együttes utasvárakozása, közös megállóból és irányban, az Örs vezér tere felé.
+A 46-os ebben a csoportban nem szerepel; a tíz alapvonal elemzésében továbbra is benne van.
+A közös megállót és célt is ellenőrizni kell: csak az utas számára ténylegesen helyettesítő menetek kerülhetnek egy csoportba.
+Minden eredmény mellé megfigyelésszám és adatlefedettség kell.
+
+## Indulás, késés és várakozás
+
+Az elemző csak mentett adatból dolgozik, az adatbázisba nem ír. Az indulások keresése és a követési számítás
+külön kipróbálható. A weboldal az előre kiszámolt eredményeket olvassa.
+
+Egy esemény kulcsa a menet, a szolgálati nap és a megállósorszám. A végső megállót és a felszállást nem engedő megállásokat kihagyom.
+Azonos saját időpontú közlés többszöri letöltése egy bizonyíték. A letöltés ideje helyett a jármű vagy a menetfrissítés saját idejét nézem.
+Az elemzéshez külön megadott menetrendváltozat tartozik; az azonosítóegyezés önmagában nem bizonyítja, hogy jól választottam változatot.
+Az adott naphoz és vonalakhoz tartozó menetrendnek egyeznie kell a megfigyelésekben hivatkozott változatok között.
+Ha a releváns menetrendi adatok eltérnek, az automatikus elemzés leáll; a változat kiválasztásáról külön kell dönteni.
+Ez nem állítja le a gyűjtést.
+
+Saját idő nélküli státuszközlésnél a válasz fejlécidejét használom a sorrendhez. Így egy törlés vagy NO_DATA jelzés nem vész el,
+de ez nem helyettesíti az indulás igazolásához szükséges saját időpontot.
+
+A legutóbbi megfelelő, múltbeli indulást keresem. Legalább két külön saját időpontú közlésben ugyanannak kell maradnia,
+nulla közölt bizonytalansággal, azonos járművel és megállóval. A korábban változó becslés ettől még használhatóvá válhat.
+A jármű indulás körüli továbbhaladását is ellenőrzöm. A nulla bizonytalanságot a szolgáltató adja: nem saját mérési pontosság.
+
+| `minoseg` | Mit tudunk az eseményről? |
+| --- | --- |
+| `alatamasztott` | Stabil közölt indulás, amelyet a megállóban állás és a továbbhaladás közti, legfeljebb 120 másodperces ablak is alátámaszt. |
+| `kovetett` | Stabil közölt indulás és közeli továbbhaladás látszik, de nincs megfelelő megállóban állási időpont az ablakhoz. |
+| `bizonytalan` | Van adat, de az időpontot, a mozgást vagy a hozzárendelést nem sikerült kellően ellenőrizni. |
+| `nem_lattuk` | A menetrendi menethez nincs megfelelő megfigyelés. Ez nem bizonyított kimaradás. |
+| `torolt` | A forrás töröltnek jelölte a menetet. Ez nem bizonyítja, hogy a teljes menet kimaradt. |
+| `kihagyott` | A forrás az adott megállás kihagyását jelzi. |
+
+A mozgásvizsgálat az indulás előtti és utáni két percre korlátozódik. Ha van koordináta, az álló pont legfeljebb 100 méterre lehet a megállótól,
+a továbbhaladó pontnak pedig legalább 40 méterre kell lennie. Ha a pont az előző megálló felé halad vissza, nem fogadom el.
+A végállomási kifordulást ez az irányellenőrzés nem minősíti téves haladásnak.
+Az időablak felső széle a vizsgált megállólátogatás után látott első továbbhaladás.
+Nem választhatok helyette egy későbbi pontot csak azért, hogy a közölt indulási idő beleférjen az ablakba.
+Ha a jármű már továbbhaladt, majd a sorszáma visszaugrik, miközben a megállótól több mint 100 méterre van,
+ezt nem tekintem új megállólátogatásnak.
+Ezek egyszerű, saját ellenőrzési határok, nem a BKK által garantált pontosságok. Megállósorszám-váltás önmagában nem elég, mert álló járműnél is előfordul.
+
+Ha egy korábbi, nulla bizonytalanságú indulást később becslés vált fel, a korábbi idő csak megállási ablakkal megerősítve maradhat meg.
+A későbbi NO_DATA vagy nem szokásos állapot nem tűnik el attól, hogy előtte volt egy kedvező közlés.
+Egy későbbi menet-törlés nem teszi meg nem történtté a korábbi indulást. Csak akkor tartom meg,
+ha a stabil közlések és a teljes megállási-továbbhaladási ablak is az első megfigyelt törlési jelzés előtt vannak.
+A későbbi törlés jelzése ilyenkor is megmarad. A pusztán követett, teljes ablakkal nem igazolt eset ehhez nem elég.
+Ha ugyanaz a jármű két külön menet alatt, ugyanott két percen belül indulásként szerepel, az események külön ellenőrzést igényelnek.
+A megállósorrenddel ellentétes indulási idősort sem fogadom el.
+
+A `menetrend_ok` külön jelzi, hogy az időpontot szabad-e menetrendi késésként használni.
+Az öt percnél nagyobb koraiság és az egy óránál nagyobb késés felülvizsgálati jelzés; nem javítom meg önkényes időeltolással.
+Egy fizikailag követhető indulás ilyenkor még hasznos lehet a követéshez, miközben a menetrendi párosítása nem biztos.
+A néhány másodperces negatív késés sem jelent bizonyított szabályszegést: a forrás és a mintavétel bizonytalanságát is figyelembe kell venni.
+
+A késés az indulás és a menetrendi indulás különbsége, másodpercben. A korai érkezést külön számolom,
+ha az érkezési idő is stabilan szerepel a közlésben. Külön látszik, ha a korán érkező jármű kivárta a menetrendi indulását.
+A szakaszon keletkező késést ugyanannak a menetnek két egymást követő, használható megállásából kell számolni;
+két különböző összetételű megállói átlag különbsége ehhez nem elég.
+
+A követést ugyanazon megállóhelyen és irányban, a tényleges indulásokat időrendbe rendezve számolom.
+A várakozásnál azt feltételezem, hogy az utas egyenletesen érkezik a vizsgált időszakban, és felszállhat a következő vizsgált járatra.
+Teljes követési közöknél az átlagos várakozás: `sum(követés²) / (2 × sum(követés))`.
+Az óra szélén átlógó közöket csak a vizsgált időablakban számolom; a tényleges és a menetrendi várakozás ugyanarra az időszakra vonatkozik.
+A plusz várakozás a két érték különbsége, és negatív is lehet.
+
+Nem zárok ki egy egész órát csak azért, mert egy része bizonytalan. A fő követési számítás két egymás melletti,
+ellenőrzött indulás közét használja. A tényleges sorrend számít: két jármű felcserélt sorrendje önmagában nem adatvesztés.
+A menetrendi sorban nem lehet közöttük bizonytalan indulás, és másik menet lehetséges időszaka sem metszheti a közöt.
+Egy bizonytalan menet jelölt idejét és megállóban látott időpontjait együtt nézem: a köztük lévő tartomány is bizonytalan,
+nem csak a felsorolt pontok. A megfigyelt ADDED és pótló menetek érintett időszakát is kihagyom.
+Ez óvatos szűrés; egy teljesen meg nem figyelt plusz indulást ebből nem lehet kizárni.
+
+A megtartott szakaszokon ugyanazt az abszolút időtartamot használom a megfigyelt és a menetrendi várakozáshoz.
+A menetrendi oldalon a teljes vonatkozó indulássor szerepel. A napi értékeket a lefedett idővel súlyozom;
+nem átlagolok össze egyformán egy ötperces és egy egyórás részletet. Órahatárnál csak az adott órára eső részt számolom.
+A darabszám és a lefedett idő minden eredmény mellett látható. Egy órahatáron átérő pár mindkét órában szerepelhet,
+ezért az órás párszámok összege nem feltétlenül a napi párok száma.
+
+A korábbi teljes órás számítás külön, szigorúbb ellenőrzésként megmarad. Ott az óra előtt és után is 15 perces
+ellenőrzési szegély van; az ADDED vagy pótló menet időszaka is ennyivel bővül. A két módszer lefedettsége ezért eltér.
+Egyikből sem helyettesítem az ismeretlen indulást menetrendi idővel vagy kitalált középértékkel.
+A hiányzó szakaszhoz nincs várakozási érték, nem nulla tartozik. A megtartott részidőszak eredménye nem automatikusan teljes napi átlag.
+A kiírt érték a véletlenszerűen érkező utas modellje; ritka járatnál, menetrendhez igazodó utasokra nem feltétlenül igaz.
+
+Nem minden mutatóhoz ugyanazokat az adatokat használom:
+
+| Adat | Mire használható? |
+| --- | --- |
+| Bizonytalan vagy nem látott indulás | Adatminőségre, jelenlét és hiány bemutatására; pontos késésnek nem veszem. |
+| Alátámasztott indulás, bizonytalan menetrendi párosítással | Követéshez még használható, menetrendi késéshez nem. |
+| Használható indulás és megfelelő menetrendi pár | Késéshez, koraisághoz, ugyanazon menet szakaszai közti változáshoz. |
+| Két szomszédos indulás közti ellenőrzött időszak | Követéshez és azonos időszakú menetrendi várakozással való összevetéshez. |
+
+A járműpozíciók közti időablak nem másodpercre pontos mérés, és nem statisztikai konfidenciaintervallum.
+A stabil TripUpdates-idő is a szolgáltató közlése. A két forrás egyezése erősíti az értelmezést,
+de nem független helyszíni mérés. A grafikonok ezért kerekített értékeket mutatnak.
+
+A közös buszos várakozást csak olyan órában hasonlítom a három külön vonalhoz, amely mind a négy számításban használható.
+A közös cél az Örs vezér tere, a megálló a Bakancsos utca F03541 peronja.
+Csak az a menet számít, amelynek későbbi megállói között az Örs 008029 megállója leszállási lehetőséggel szerepel.
+Ez a felszállásig tartó várakozásról szól;
+a rövidebb várakozás nem feltétlenül jelent korábbi célba érést, mert a buszok menetideje eltérhet.
+
+Az eredmények mellett szerepelnie kell a használt indulások és menetek számának, a vizsgált napoknak és a lefedettségnek.
+A több ezer megállói indulás nem több ezer független utazás: egy menet sok megállójával is szerepelhet.
+Egy szombati nap alapján csak arról a napról állítok valamit. A napok közti összevetéshez több teljes nap kell;
+az időjárás és a zavarjelzések együttjárása pedig önmagában nem bizonyít ok-okozatot.
 
 ## Adatbázisba töltés
 
@@ -73,6 +220,11 @@ Az adatbázisról naponta külön mentés készül; a kész fájlt az óránkén
 A mentés visszaállítását külön próba-adatbázisban ellenőriztem. A két mentés közti időszak a nyers fájlokból újra betölthető.
 
 Tíz tábla van, az órás adatminőség külön számított nézet.
+
+[Az adatbázis teljes ábrája](adatbazis.svg) minden oszlopot, típust, rövid jelentést és a tényleges PK/FK-kapcsolatokat mutatja.
+Az SVG nagyítható, így az apró oszlopnevek is olvashatók. A PK elsődleges kulcs, az FK idegen kulcs;
+ha egy kulcs több oszlopból áll, azokat együtt kell használni. A kapcsolatvégek Crow’s Foot jelölést használnak.
+A valós idejű menet menetrendhez párosítása nem kikényszerített idegen kulcs, ezért nincs valódi FK-ként berajzolva.
 
 | Tábla | Mit tárol | Azonosító és kapcsolat |
 | --- | --- | --- |

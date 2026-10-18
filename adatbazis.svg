@@ -1,0 +1,1029 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="4000" height="2460" viewBox="0 0 4000 2460" role="img" aria-labelledby="title description">
+<title id="title">Késésfigyelő adatbázis — minden oszlop és idegen kulcs</title>
+<desc id="description">Tíz PostgreSQL-tábla 113 oszloppal, tizenkét idegen kulccsal, és az adatminoseg számított nézet. Crow’s Foot kapcsolatjelölés. Minden oszlop mellett rövid magyar jelentés.</desc>
+<defs>
+<marker id="one" viewBox="-30 -12 30 24" refX="0" refY="0" markerWidth="30" markerHeight="24" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M-8,-9 V9 M-17,-9 V9" fill="none" stroke="#465b6a" stroke-width="2.2"/></marker>
+<marker id="optional" viewBox="-35 -12 35 24" refX="0" refY="0" markerWidth="35" markerHeight="24" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M-8,-9 V9" fill="none" stroke="#465b6a" stroke-width="2.2"/><circle cx="-24" cy="0" r="6" fill="white" stroke="#465b6a" stroke-width="2.2"/></marker>
+<marker id="many" viewBox="-38 -12 38 24" refX="0" refY="0" markerWidth="38" markerHeight="24" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,-9 L-14,0 L0,9 M-14,0 H0" fill="none" stroke="#465b6a" stroke-width="2.2"/><circle cx="-26" cy="0" r="6" fill="white" stroke="#465b6a" stroke-width="2.2"/></marker>
+<marker id="dependency" viewBox="-12 -7 12 14" refX="0" refY="0" markerWidth="12" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto"><path d="M-10,-5 L0,0 L-10,5" fill="none" stroke="#907a39" stroke-width="2"/></marker>
+</defs>
+<style>text{font-family:Arial,sans-serif;font-size:15px;fill:#18232b}.name{font-family:Consolas,monospace;font-size:14px}.small{font-size:14px}.title{font-size:32px;font-weight:bold}.subtitle{font-size:19px}.group{font-size:21px;font-weight:bold;fill:#516575}.head{font-size:22px;font-weight:bold}.key{font-size:13px;font-weight:bold}.edge{fill:none;stroke:#465b6a;stroke-width:2.2;stroke-linejoin:round}.dep{fill:none;stroke:#907a39;stroke-width:2;stroke-dasharray:7 6}.edge-label{font-size:14px;paint-order:stroke;stroke:white;stroke-width:6px;stroke-linejoin:round}.note{font-size:17px}</style>
+<rect width="4000" height="2460" fill="white"/>
+<text x="100" y="55" class="title">Késésfigyelő — adatbázis</text>
+<text x="100" y="88" class="subtitle">10 tábla · 113 oszlop · 12 idegen kulcs · 1 számított nézet</text>
+<text x="100" y="145" class="group">MENTETT FORRÁSOK ÉS ELLENŐRZÉS</text>
+<text x="100" y="1060" class="group">MENETREND — minden változat külön megmarad</text>
+<text x="100" y="1660" class="group">VALÓS IDEJŰ ADATOK — ugyanarról az eseményről több megfigyelés lehet</text>
+<polyline class="edge" points="900,283 990,283 990,465 1100,465" marker-start="url(#optional)" marker-end="url(#many)"/>
+<polyline class="edge" points="100,283 80,283 80,1203 100,1203" marker-start="url(#one)" marker-end="url(#many)"/>
+<polyline class="edge" points="900,283 950,283 950,900 3050,900 3050,1203 3100,1203" marker-start="url(#one)" marker-end="url(#many)"/>
+<polyline class="edge" points="900,283 970,283 970,850 1050,850 1050,1203 1100,1203" marker-start="url(#one)" marker-end="url(#many)"/>
+<polyline class="edge" points="900,1229 1000,1229 1000,1255 1100,1255" marker-start="url(#one)" marker-end="url(#many)"/>
+<polyline class="edge" points="1900,1229 2100,1229" marker-start="url(#one)" marker-end="url(#many)"/>
+<polyline class="edge" points="3100,1229 3000,1229 3000,1281 2900,1281" marker-start="url(#one)" marker-end="url(#many)"/>
+<polyline class="edge" points="100,283 50,283 50,1803 100,1803" marker-start="url(#one)" marker-end="url(#many)"/>
+<polyline class="edge" points="100,283 20,283 20,1959 100,1959" marker-start="url(#optional)" marker-end="url(#many)"/>
+<polyline class="edge" points="900,1829 1100,1829" marker-start="url(#one)" marker-end="url(#many)"/>
+<polyline class="edge" points="900,283 930,283 930,950 2050,950 2050,1803 2100,1803" marker-start="url(#one)" marker-end="url(#many)"/>
+<polyline class="edge" points="900,283 910,283 910,1000 3050,1000 3050,1803 3100,1803" marker-start="url(#one)" marker-end="url(#many)"/>
+<path class="dep" d="M500 180 V125 H2500 V180" marker-end="url(#dependency)"/>
+<text x="1600" y="118" class="edge-label">fejlécidő a számításhoz</text>
+<path class="dep" d="M1900 500 H2100" marker-end="url(#dependency)"/>
+<text x="1920" y="489" class="edge-label">lekérési naplók</text>
+<text x="995" y="370" class="edge-label">nyers_id</text>
+<text x="1780" y="890" class="edge-label">menetrend_id</text>
+<text x="974" y="838" class="edge-label">menetrend_id</text>
+<text x="965" y="1190" class="edge-label">menetrend_id</text>
+<text x="965" y="1210" class="edge-label">+ vonal_id</text>
+<text x="1915" y="1190" class="edge-label">menetrend_id</text>
+<text x="1915" y="1210" class="edge-label">+ menet_id</text>
+<text x="2905" y="1190" class="edge-label">menetrend_id</text>
+<text x="2905" y="1210" class="edge-label">+ megallo_id</text>
+<text x="915" y="1790" class="edge-label">nyers_id</text>
+<text x="915" y="1810" class="edge-label">+ elemsorrend</text>
+<text x="1880" y="940" class="edge-label">nyers_id</text>
+<text x="2880" y="990" class="edge-label">nyers_id</text>
+<g id="table-nyers_fajl"><rect x="100" y="180" width="800" height="506" fill="white" stroke="#71808a" stroke-width="1.5"/>
+<rect x="101" y="181" width="798" height="59" fill="#e8edef"/>
+<text x="112" y="206" class="head">nyers_fajl</text>
+<text x="112" y="227" >Mentett fájlok jegyzéke</text>
+<rect x="101" y="240" width="798" height="30" fill="#f5f6f7"/>
+<text x="112" y="260" font-weight="bold">Kulcs</text>
+<text x="175" y="260" font-weight="bold">Oszlop</text>
+<text x="425" y="260" font-weight="bold">Típus</text>
+<text x="555" y="260" font-weight="bold">Mi van benne?</text>
+<g id="column-nyers_fajl-id"><title>id: Saját számos azonosító</title>
+<text x="112" y="288" class="key">PK</text>
+<text x="175" y="288" class="name">id</text>
+<text x="425" y="288" class="small">BIGINT</text>
+<text x="555" y="288" >Saját számos azonosító</text>
+</g>
+<rect x="101" y="296" width="798" height="26" fill="#fafbfc"/>
+<g id="column-nyers_fajl-forras"><title>forras: VehiclePositions, TripUpdates stb.</title>
+<text x="112" y="314" class="key">U1</text>
+<text x="175" y="314" class="name">forras</text>
+<text x="425" y="314" class="small">TEXT</text>
+<text x="555" y="314" >VehiclePositions, TripUpdates stb.</text>
+</g>
+<g id="column-nyers_fajl-sha256"><title>sha256: Az eredeti válasz ellenőrző összege</title>
+<text x="112" y="340" class="key">U1</text>
+<text x="175" y="340" class="name">sha256</text>
+<text x="425" y="340" class="small">TEXT</text>
+<text x="555" y="340" >Az eredeti válasz ellenőrző összege</text>
+</g>
+<rect x="101" y="348" width="798" height="26" fill="#fafbfc"/>
+<g id="column-nyers_fajl-fajl"><title>fajl: A mentett fájl útvonala</title>
+<text x="112" y="366" class="key"></text>
+<text x="175" y="366" class="name">fajl</text>
+<text x="425" y="366" class="small">TEXT</text>
+<text x="555" y="366" >A mentett fájl útvonala</text>
+</g>
+<g id="column-nyers_fajl-nyers_bajt"><title>nyers_bajt: A válasz mérete tömörítés előtt</title>
+<text x="112" y="392" class="key"></text>
+<text x="175" y="392" class="name">nyers_bajt</text>
+<text x="425" y="392" class="small">BIGINT</text>
+<text x="555" y="392" >A válasz mérete tömörítés előtt</text>
+</g>
+<rect x="101" y="400" width="798" height="26" fill="#fafbfc"/>
+<g id="column-nyers_fajl-feed_ido"><title>feed_ido: A válasz fejlécének időpontja</title>
+<text x="112" y="418" class="key"></text>
+<text x="175" y="418" class="name">feed_ido</text>
+<text x="425" y="418" class="small">TIMESTAMPTZ ?</text>
+<text x="555" y="418" >A válasz fejlécének időpontja</text>
+</g>
+<g id="column-nyers_fajl-feed_verzio"><title>feed_verzio: GTFS-Realtime formátumverzió</title>
+<text x="112" y="444" class="key"></text>
+<text x="175" y="444" class="name">feed_verzio</text>
+<text x="425" y="444" class="small">TEXT ?</text>
+<text x="555" y="444" >GTFS-Realtime formátumverzió</text>
+</g>
+<rect x="101" y="452" width="798" height="26" fill="#fafbfc"/>
+<g id="column-nyers_fajl-menetrend_verzio"><title>menetrend_verzio: A szolgáltató menetrend-verziója</title>
+<text x="112" y="470" class="key"></text>
+<text x="175" y="470" class="name">menetrend_verzio</text>
+<text x="425" y="470" class="small">TEXT ?</text>
+<text x="555" y="470" >A szolgáltató menetrend-verziója</text>
+</g>
+<g id="column-nyers_fajl-idozona"><title>idozona: A menetrend időzónája</title>
+<text x="112" y="496" class="key"></text>
+<text x="175" y="496" class="name">idozona</text>
+<text x="425" y="496" class="small">TEXT ?</text>
+<text x="555" y="496" >A menetrend időzónája</text>
+</g>
+<rect x="101" y="504" width="798" height="26" fill="#fafbfc"/>
+<g id="column-nyers_fajl-ervenyes_tol"><title>ervenyes_tol: Menetrendi érvényesség kezdete</title>
+<text x="112" y="522" class="key"></text>
+<text x="175" y="522" class="name">ervenyes_tol</text>
+<text x="425" y="522" class="small">DATE ?</text>
+<text x="555" y="522" >Menetrendi érvényesség kezdete</text>
+</g>
+<g id="column-nyers_fajl-ervenyes_ig"><title>ervenyes_ig: Menetrendi érvényesség vége</title>
+<text x="112" y="548" class="key"></text>
+<text x="175" y="548" class="name">ervenyes_ig</text>
+<text x="425" y="548" class="small">DATE ?</text>
+<text x="555" y="548" >Menetrendi érvényesség vége</text>
+</g>
+<rect x="101" y="556" width="798" height="26" fill="#fafbfc"/>
+<g id="column-nyers_fajl-novekmenyes"><title>novekmenyes: Csak változásokat tartalmaz-e</title>
+<text x="112" y="574" class="key"></text>
+<text x="175" y="574" class="name">novekmenyes</text>
+<text x="425" y="574" class="small">BOOLEAN ?</text>
+<text x="555" y="574" >Csak változásokat tartalmaz-e</text>
+</g>
+<g id="column-nyers_fajl-jelolt_menetrend"><title>jelolt_menetrend: A választott menetrend ellenőrző összege</title>
+<text x="112" y="600" class="key"></text>
+<text x="175" y="600" class="name">jelolt_menetrend</text>
+<text x="425" y="600" class="small">TEXT ?</text>
+<text x="555" y="600" >A választott menetrend ellenőrző összege</text>
+</g>
+<rect x="101" y="608" width="798" height="26" fill="#fafbfc"/>
+<g id="column-nyers_fajl-feldolgozva"><title>feldolgozva: Elkészült-e a táblákra bontás</title>
+<text x="112" y="626" class="key"></text>
+<text x="175" y="626" class="name">feldolgozva</text>
+<text x="425" y="626" class="small">BOOLEAN</text>
+<text x="555" y="626" >Elkészült-e a táblákra bontás</text>
+</g>
+<g id="column-nyers_fajl-feldolgozasi_hiba"><title>feldolgozasi_hiba: Feldolgozási hiba rövid leírása</title>
+<text x="112" y="652" class="key"></text>
+<text x="175" y="652" class="name">feldolgozasi_hiba</text>
+<text x="425" y="652" class="small">TEXT ?</text>
+<text x="555" y="652" >Feldolgozási hiba rövid leírása</text>
+</g>
+<rect x="101" y="660" width="798" height="26" fill="#fafbfc"/>
+<g id="column-nyers_fajl-kihagyott"><title>kihagyott: Szűrt vagy nem kezelt elemek száma</title>
+<text x="112" y="678" class="key"></text>
+<text x="175" y="678" class="name">kihagyott</text>
+<text x="425" y="678" class="small">INTEGER</text>
+<text x="555" y="678" >Szűrt vagy nem kezelt elemek száma</text>
+</g>
+</g>
+<g id="table-lekeres"><rect x="1100" y="180" width="800" height="454" fill="white" stroke="#71808a" stroke-width="1.5"/>
+<rect x="1101" y="181" width="798" height="59" fill="#e8edef"/>
+<text x="1112" y="206" class="head">lekeres</text>
+<text x="1112" y="227" >Lekérési kísérletek</text>
+<rect x="1101" y="240" width="798" height="30" fill="#f5f6f7"/>
+<text x="1112" y="260" font-weight="bold">Kulcs</text>
+<text x="1175" y="260" font-weight="bold">Oszlop</text>
+<text x="1425" y="260" font-weight="bold">Típus</text>
+<text x="1555" y="260" font-weight="bold">Mi van benne?</text>
+<g id="column-lekeres-id"><title>id: A kérés naplóbeli azonosítója</title>
+<text x="1112" y="288" class="key">PK</text>
+<text x="1175" y="288" class="name">id</text>
+<text x="1425" y="288" class="small">UUID</text>
+<text x="1555" y="288" >A kérés naplóbeli azonosítója</text>
+</g>
+<rect x="1101" y="296" width="798" height="26" fill="#fafbfc"/>
+<g id="column-lekeres-naplo_sha256"><title>naplo_sha256: A napló ellenőrző összege</title>
+<text x="1112" y="314" class="key"></text>
+<text x="1175" y="314" class="name">naplo_sha256</text>
+<text x="1425" y="314" class="small">TEXT</text>
+<text x="1555" y="314" >A napló ellenőrző összege</text>
+</g>
+<g id="column-lekeres-forras"><title>forras: Melyik adatforrást kérte le</title>
+<text x="1112" y="340" class="key"></text>
+<text x="1175" y="340" class="name">forras</text>
+<text x="1425" y="340" class="small">TEXT</text>
+<text x="1555" y="340" >Melyik adatforrást kérte le</text>
+</g>
+<rect x="1101" y="348" width="798" height="26" fill="#fafbfc"/>
+<g id="column-lekeres-kezdett"><title>kezdett: A lekérés kezdete</title>
+<text x="1112" y="366" class="key"></text>
+<text x="1175" y="366" class="name">kezdett</text>
+<text x="1425" y="366" class="small">TIMESTAMPTZ</text>
+<text x="1555" y="366" >A lekérés kezdete</text>
+</g>
+<g id="column-lekeres-vegzett"><title>vegzett: A lekérés vége</title>
+<text x="1112" y="392" class="key"></text>
+<text x="1175" y="392" class="name">vegzett</text>
+<text x="1425" y="392" class="small">TIMESTAMPTZ</text>
+<text x="1555" y="392" >A lekérés vége</text>
+</g>
+<rect x="1101" y="400" width="798" height="26" fill="#fafbfc"/>
+<g id="column-lekeres-eredmeny"><title>eredmeny: Siker vagy a hiba fajtája</title>
+<text x="1112" y="418" class="key"></text>
+<text x="1175" y="418" class="name">eredmeny</text>
+<text x="1425" y="418" class="small">TEXT</text>
+<text x="1555" y="418" >Siker vagy a hiba fajtája</text>
+</g>
+<g id="column-lekeres-http_status"><title>http_status: A szerver HTTP-válaszkódja</title>
+<text x="1112" y="444" class="key"></text>
+<text x="1175" y="444" class="name">http_status</text>
+<text x="1425" y="444" class="small">INTEGER ?</text>
+<text x="1555" y="444" >A szerver HTTP-válaszkódja</text>
+</g>
+<rect x="1101" y="452" width="798" height="26" fill="#fafbfc"/>
+<g id="column-lekeres-nyers_id"><title>nyers_id: Az elmentett válasz</title>
+<text x="1112" y="470" class="key">FK</text>
+<text x="1175" y="470" class="name">nyers_id</text>
+<text x="1425" y="470" class="small">BIGINT ?</text>
+<text x="1555" y="470" >Az elmentett válasz</text>
+</g>
+<g id="column-lekeres-ismert_menetrend_sha256"><title>ismert_menetrend_sha256: A kéréskor ismert menetrend</title>
+<text x="1112" y="496" class="key"></text>
+<text x="1175" y="496" class="name">ismert_menetrend_sha256</text>
+<text x="1425" y="496" class="small">TEXT ?</text>
+<text x="1555" y="496" >A kéréskor ismert menetrend</text>
+</g>
+<rect x="1101" y="504" width="798" height="26" fill="#fafbfc"/>
+<g id="column-lekeres-jarmuvek"><title>jarmuvek: Járművek száma a teljes válaszban</title>
+<text x="1112" y="522" class="key"></text>
+<text x="1175" y="522" class="name">jarmuvek</text>
+<text x="1425" y="522" class="small">INTEGER ?</text>
+<text x="1555" y="522" >Járművek száma a teljes válaszban</text>
+</g>
+<g id="column-lekeres-menetfrissitesek"><title>menetfrissitesek: Menetfrissítések száma a válaszban</title>
+<text x="1112" y="548" class="key"></text>
+<text x="1175" y="548" class="name">menetfrissitesek</text>
+<text x="1425" y="548" class="small">INTEGER ?</text>
+<text x="1555" y="548" >Menetfrissítések száma a válaszban</text>
+</g>
+<rect x="1101" y="556" width="798" height="26" fill="#fafbfc"/>
+<g id="column-lekeres-feed_regi"><title>feed_regi: Régi-e a válasz a saját korhatár szerint</title>
+<text x="1112" y="574" class="key"></text>
+<text x="1175" y="574" class="name">feed_regi</text>
+<text x="1425" y="574" class="small">BOOLEAN ?</text>
+<text x="1555" y="574" >Régi-e a válasz a saját korhatár szerint</text>
+</g>
+<g id="column-lekeres-regi_pontok"><title>regi_pontok: Régi időjárási pontok száma</title>
+<text x="1112" y="600" class="key"></text>
+<text x="1175" y="600" class="name">regi_pontok</text>
+<text x="1425" y="600" class="small">INTEGER ?</text>
+<text x="1555" y="600" >Régi időjárási pontok száma</text>
+</g>
+<rect x="1101" y="608" width="798" height="26" fill="#fafbfc"/>
+<g id="column-lekeres-hianyzo_ertekek"><title>hianyzo_ertekek: Hiányzó időjárási értékek száma</title>
+<text x="1112" y="626" class="key"></text>
+<text x="1175" y="626" class="name">hianyzo_ertekek</text>
+<text x="1425" y="626" class="small">INTEGER ?</text>
+<text x="1555" y="626" >Hiányzó időjárási értékek száma</text>
+</g>
+</g>
+<g id="table-vonal"><rect x="100" y="1100" width="800" height="194" fill="white" stroke="#71808a" stroke-width="1.5"/>
+<rect x="101" y="1101" width="798" height="59" fill="#dde8ef"/>
+<text x="112" y="1126" class="head">vonal</text>
+<text x="112" y="1147" >Vonaljegyzék</text>
+<rect x="101" y="1160" width="798" height="30" fill="#f5f6f7"/>
+<text x="112" y="1180" font-weight="bold">Kulcs</text>
+<text x="175" y="1180" font-weight="bold">Oszlop</text>
+<text x="425" y="1180" font-weight="bold">Típus</text>
+<text x="555" y="1180" font-weight="bold">Mi van benne?</text>
+<g id="column-vonal-menetrend_id"><title>menetrend_id: A menetrendi ZIP azonosítója</title>
+<text x="112" y="1208" class="key">PK/FK</text>
+<text x="175" y="1208" class="name">menetrend_id</text>
+<text x="425" y="1208" class="small">BIGINT</text>
+<text x="555" y="1208" >A menetrendi ZIP azonosítója</text>
+</g>
+<rect x="101" y="1216" width="798" height="26" fill="#fafbfc"/>
+<g id="column-vonal-vonal_id"><title>vonal_id: BKK-vonalazonosító</title>
+<text x="112" y="1234" class="key">PK</text>
+<text x="175" y="1234" class="name">vonal_id</text>
+<text x="425" y="1234" class="small">TEXT</text>
+<text x="555" y="1234" >BKK-vonalazonosító</text>
+</g>
+<g id="column-vonal-nev"><title>nev: Vonaljelzés, például 97E</title>
+<text x="112" y="1260" class="key"></text>
+<text x="175" y="1260" class="name">nev</text>
+<text x="425" y="1260" class="small">TEXT ?</text>
+<text x="555" y="1260" >Vonaljelzés, például 97E</text>
+</g>
+<rect x="101" y="1268" width="798" height="26" fill="#fafbfc"/>
+<g id="column-vonal-tipus"><title>tipus: GTFS járműfajta kódja</title>
+<text x="112" y="1286" class="key"></text>
+<text x="175" y="1286" class="name">tipus</text>
+<text x="425" y="1286" class="small">INTEGER ?</text>
+<text x="555" y="1286" >GTFS járműfajta kódja</text>
+</g>
+</g>
+<g id="table-megallo"><rect x="3100" y="1100" width="800" height="220" fill="white" stroke="#71808a" stroke-width="1.5"/>
+<rect x="3101" y="1101" width="798" height="59" fill="#dde8ef"/>
+<text x="3112" y="1126" class="head">megallo</text>
+<text x="3112" y="1147" >Megállójegyzék</text>
+<rect x="3101" y="1160" width="798" height="30" fill="#f5f6f7"/>
+<text x="3112" y="1180" font-weight="bold">Kulcs</text>
+<text x="3175" y="1180" font-weight="bold">Oszlop</text>
+<text x="3425" y="1180" font-weight="bold">Típus</text>
+<text x="3555" y="1180" font-weight="bold">Mi van benne?</text>
+<g id="column-megallo-menetrend_id"><title>menetrend_id: A menetrendi ZIP azonosítója</title>
+<text x="3112" y="1208" class="key">PK/FK</text>
+<text x="3175" y="1208" class="name">menetrend_id</text>
+<text x="3425" y="1208" class="small">BIGINT</text>
+<text x="3555" y="1208" >A menetrendi ZIP azonosítója</text>
+</g>
+<rect x="3101" y="1216" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megallo-megallo_id"><title>megallo_id: BKK-megállóazonosító</title>
+<text x="3112" y="1234" class="key">PK</text>
+<text x="3175" y="1234" class="name">megallo_id</text>
+<text x="3425" y="1234" class="small">TEXT</text>
+<text x="3555" y="1234" >BKK-megállóazonosító</text>
+</g>
+<g id="column-megallo-nev"><title>nev: A megálló neve</title>
+<text x="3112" y="1260" class="key"></text>
+<text x="3175" y="1260" class="name">nev</text>
+<text x="3425" y="1260" class="small">TEXT ?</text>
+<text x="3555" y="1260" >A megálló neve</text>
+</g>
+<rect x="3101" y="1268" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megallo-lat"><title>lat: Földrajzi szélesség, fok</title>
+<text x="3112" y="1286" class="key"></text>
+<text x="3175" y="1286" class="name">lat</text>
+<text x="3425" y="1286" class="small">FLOAT8 ?</text>
+<text x="3555" y="1286" >Földrajzi szélesség, fok</text>
+</g>
+<g id="column-megallo-lon"><title>lon: Földrajzi hosszúság, fok</title>
+<text x="3112" y="1312" class="key"></text>
+<text x="3175" y="1312" class="name">lon</text>
+<text x="3425" y="1312" class="small">FLOAT8 ?</text>
+<text x="3555" y="1312" >Földrajzi hosszúság, fok</text>
+</g>
+</g>
+<g id="table-menet"><rect x="1100" y="1100" width="800" height="246" fill="white" stroke="#71808a" stroke-width="1.5"/>
+<rect x="1101" y="1101" width="798" height="59" fill="#dde8ef"/>
+<text x="1112" y="1126" class="head">menet</text>
+<text x="1112" y="1147" >Menetrendi menetek</text>
+<rect x="1101" y="1160" width="798" height="30" fill="#f5f6f7"/>
+<text x="1112" y="1180" font-weight="bold">Kulcs</text>
+<text x="1175" y="1180" font-weight="bold">Oszlop</text>
+<text x="1425" y="1180" font-weight="bold">Típus</text>
+<text x="1555" y="1180" font-weight="bold">Mi van benne?</text>
+<g id="column-menet-menetrend_id"><title>menetrend_id: A menetrendi ZIP azonosítója</title>
+<text x="1112" y="1208" class="key">PK/FK</text>
+<text x="1175" y="1208" class="name">menetrend_id</text>
+<text x="1425" y="1208" class="small">BIGINT</text>
+<text x="1555" y="1208" >A menetrendi ZIP azonosítója</text>
+</g>
+<rect x="1101" y="1216" width="798" height="26" fill="#fafbfc"/>
+<g id="column-menet-menet_id"><title>menet_id: BKK-menetazonosító</title>
+<text x="1112" y="1234" class="key">PK</text>
+<text x="1175" y="1234" class="name">menet_id</text>
+<text x="1425" y="1234" class="small">TEXT</text>
+<text x="1555" y="1234" >BKK-menetazonosító</text>
+</g>
+<g id="column-menet-vonal_id"><title>vonal_id: A menet vonala</title>
+<text x="1112" y="1260" class="key">FK</text>
+<text x="1175" y="1260" class="name">vonal_id</text>
+<text x="1425" y="1260" class="small">TEXT</text>
+<text x="1555" y="1260" >A menet vonala</text>
+</g>
+<rect x="1101" y="1268" width="798" height="26" fill="#fafbfc"/>
+<g id="column-menet-szolgalat_id"><title>szolgalat_id: A közlekedési naptár azonosítója</title>
+<text x="1112" y="1286" class="key"></text>
+<text x="1175" y="1286" class="name">szolgalat_id</text>
+<text x="1425" y="1286" class="small">TEXT</text>
+<text x="1555" y="1286" >A közlekedési naptár azonosítója</text>
+</g>
+<g id="column-menet-irany"><title>irany: GTFS iránykód: 0 vagy 1</title>
+<text x="1112" y="1312" class="key"></text>
+<text x="1175" y="1312" class="name">irany</text>
+<text x="1425" y="1312" class="small">INTEGER ?</text>
+<text x="1555" y="1312" >GTFS iránykód: 0 vagy 1</text>
+</g>
+<rect x="1101" y="1320" width="798" height="26" fill="#fafbfc"/>
+<g id="column-menet-napok"><title>napok: Közlekedési napok, a kivételekkel együtt</title>
+<text x="1112" y="1338" class="key"></text>
+<text x="1175" y="1338" class="name">napok</text>
+<text x="1425" y="1338" class="small">DATE[]</text>
+<text x="1555" y="1338" >Közlekedési napok, a kivételekkel együtt</text>
+</g>
+</g>
+<g id="table-megallasi_ido"><rect x="2100" y="1100" width="800" height="350" fill="white" stroke="#71808a" stroke-width="1.5"/>
+<rect x="2101" y="1101" width="798" height="59" fill="#dde8ef"/>
+<text x="2112" y="1126" class="head">megallasi_ido</text>
+<text x="2112" y="1147" >Menetrendi megállási idők</text>
+<rect x="2101" y="1160" width="798" height="30" fill="#f5f6f7"/>
+<text x="2112" y="1180" font-weight="bold">Kulcs</text>
+<text x="2175" y="1180" font-weight="bold">Oszlop</text>
+<text x="2425" y="1180" font-weight="bold">Típus</text>
+<text x="2555" y="1180" font-weight="bold">Mi van benne?</text>
+<g id="column-megallasi_ido-menetrend_id"><title>menetrend_id: A menetrendi ZIP azonosítója</title>
+<text x="2112" y="1208" class="key">PK/FK</text>
+<text x="2175" y="1208" class="name">menetrend_id</text>
+<text x="2425" y="1208" class="small">BIGINT</text>
+<text x="2555" y="1208" >A menetrendi ZIP azonosítója</text>
+</g>
+<rect x="2101" y="1216" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megallasi_ido-menet_id"><title>menet_id: A menetrendi menet</title>
+<text x="2112" y="1234" class="key">PK/FK</text>
+<text x="2175" y="1234" class="name">menet_id</text>
+<text x="2425" y="1234" class="small">TEXT</text>
+<text x="2555" y="1234" >A menetrendi menet</text>
+</g>
+<g id="column-megallasi_ido-sorrend"><title>sorrend: Megállósorszám a menetben</title>
+<text x="2112" y="1260" class="key">PK</text>
+<text x="2175" y="1260" class="name">sorrend</text>
+<text x="2425" y="1260" class="small">INTEGER</text>
+<text x="2555" y="1260" >Megállósorszám a menetben</text>
+</g>
+<rect x="2101" y="1268" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megallasi_ido-megallo_id"><title>megallo_id: A megálló</title>
+<text x="2112" y="1286" class="key">FK</text>
+<text x="2175" y="1286" class="name">megallo_id</text>
+<text x="2425" y="1286" class="small">TEXT</text>
+<text x="2555" y="1286" >A megálló</text>
+</g>
+<g id="column-megallasi_ido-erkezes_mp"><title>erkezes_mp: Tervezett érkezés: napkezdettől, mp</title>
+<text x="2112" y="1312" class="key"></text>
+<text x="2175" y="1312" class="name">erkezes_mp</text>
+<text x="2425" y="1312" class="small">INTEGER ?</text>
+<text x="2555" y="1312" >Tervezett érkezés: napkezdettől, mp</text>
+</g>
+<rect x="2101" y="1320" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megallasi_ido-indulas_mp"><title>indulas_mp: Tervezett indulás: napkezdettől, mp</title>
+<text x="2112" y="1338" class="key"></text>
+<text x="2175" y="1338" class="name">indulas_mp</text>
+<text x="2425" y="1338" class="small">INTEGER ?</text>
+<text x="2555" y="1338" >Tervezett indulás: napkezdettől, mp</text>
+</g>
+<g id="column-megallasi_ido-erkezes"><title>erkezes: Eredeti időszöveg, pl. 25:10:00</title>
+<text x="2112" y="1364" class="key"></text>
+<text x="2175" y="1364" class="name">erkezes</text>
+<text x="2425" y="1364" class="small">TEXT ?</text>
+<text x="2555" y="1364" >Eredeti időszöveg, pl. 25:10:00</text>
+</g>
+<rect x="2101" y="1372" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megallasi_ido-indulas"><title>indulas: Eredeti indulási időszöveg</title>
+<text x="2112" y="1390" class="key"></text>
+<text x="2175" y="1390" class="name">indulas</text>
+<text x="2425" y="1390" class="small">TEXT ?</text>
+<text x="2555" y="1390" >Eredeti indulási időszöveg</text>
+</g>
+<g id="column-megallasi_ido-felszallas"><title>felszallas: Felszállási szabály kódja</title>
+<text x="2112" y="1416" class="key"></text>
+<text x="2175" y="1416" class="name">felszallas</text>
+<text x="2425" y="1416" class="small">INTEGER ?</text>
+<text x="2555" y="1416" >Felszállási szabály kódja</text>
+</g>
+<rect x="2101" y="1424" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megallasi_ido-kiszallas"><title>kiszallas: Leszállási szabály kódja</title>
+<text x="2112" y="1442" class="key"></text>
+<text x="2175" y="1442" class="name">kiszallas</text>
+<text x="2425" y="1442" class="small">INTEGER ?</text>
+<text x="2555" y="1442" >Leszállási szabály kódja</text>
+</g>
+</g>
+<g id="table-megfigyeles"><rect x="100" y="1700" width="800" height="688" fill="white" stroke="#71808a" stroke-width="1.5"/>
+<rect x="101" y="1701" width="798" height="59" fill="#e8edef"/>
+<text x="112" y="1726" class="head">megfigyeles</text>
+<text x="112" y="1747" >Valós idejű megfigyelések</text>
+<rect x="101" y="1760" width="798" height="30" fill="#f5f6f7"/>
+<text x="112" y="1780" font-weight="bold">Kulcs</text>
+<text x="175" y="1780" font-weight="bold">Oszlop</text>
+<text x="425" y="1780" font-weight="bold">Típus</text>
+<text x="555" y="1780" font-weight="bold">Mi van benne?</text>
+<g id="column-megfigyeles-nyers_id"><title>nyers_id: A nyers válasz</title>
+<text x="112" y="1808" class="key">PK/FK</text>
+<text x="175" y="1808" class="name">nyers_id</text>
+<text x="425" y="1808" class="small">BIGINT</text>
+<text x="555" y="1808" >A nyers válasz</text>
+</g>
+<rect x="101" y="1816" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megfigyeles-sorrend"><title>sorrend: Az elem helye a válaszban</title>
+<text x="112" y="1834" class="key">PK</text>
+<text x="175" y="1834" class="name">sorrend</text>
+<text x="425" y="1834" class="small">INTEGER</text>
+<text x="555" y="1834" >Az elem helye a válaszban</text>
+</g>
+<g id="column-megfigyeles-elem_id"><title>elem_id: Az elem forrásbeli azonosítója</title>
+<text x="112" y="1860" class="key"></text>
+<text x="175" y="1860" class="name">elem_id</text>
+<text x="425" y="1860" class="small">TEXT ?</text>
+<text x="555" y="1860" >Az elem forrásbeli azonosítója</text>
+</g>
+<rect x="101" y="1868" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megfigyeles-tipus"><title>tipus: vehicle vagy trip_update</title>
+<text x="112" y="1886" class="key"></text>
+<text x="175" y="1886" class="name">tipus</text>
+<text x="425" y="1886" class="small">TEXT</text>
+<text x="555" y="1886" >vehicle vagy trip_update</text>
+</g>
+<g id="column-megfigyeles-forras_vonal_id"><title>forras_vonal_id: A forrásban megadott vonal</title>
+<text x="112" y="1912" class="key"></text>
+<text x="175" y="1912" class="name">forras_vonal_id</text>
+<text x="425" y="1912" class="small">TEXT ?</text>
+<text x="555" y="1912" >A forrásban megadott vonal</text>
+</g>
+<rect x="101" y="1920" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megfigyeles-vonal_id"><title>vonal_id: Megadott vagy feloldott vonal</title>
+<text x="112" y="1938" class="key"></text>
+<text x="175" y="1938" class="name">vonal_id</text>
+<text x="425" y="1938" class="small">TEXT ?</text>
+<text x="555" y="1938" >Megadott vagy feloldott vonal</text>
+</g>
+<g id="column-megfigyeles-menetrend_id"><title>menetrend_id: A feloldáshoz használt menetrendi jelölt</title>
+<text x="112" y="1964" class="key">FK</text>
+<text x="175" y="1964" class="name">menetrend_id</text>
+<text x="425" y="1964" class="small">BIGINT ?</text>
+<text x="555" y="1964" >A feloldáshoz használt menetrendi jelölt</text>
+</g>
+<rect x="101" y="1972" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megfigyeles-feloldas"><title>feloldas: A vonal feloldásának módja vagy hibája</title>
+<text x="112" y="1990" class="key"></text>
+<text x="175" y="1990" class="name">feloldas</text>
+<text x="425" y="1990" class="small">TEXT ?</text>
+<text x="555" y="1990" >A vonal feloldásának módja vagy hibája</text>
+</g>
+<g id="column-megfigyeles-potolt_vonal_id"><title>potolt_vonal_id: A lehetséges pótolt vonal</title>
+<text x="112" y="2016" class="key"></text>
+<text x="175" y="2016" class="name">potolt_vonal_id</text>
+<text x="425" y="2016" class="small">TEXT ?</text>
+<text x="555" y="2016" >A lehetséges pótolt vonal</text>
+</g>
+<rect x="101" y="2024" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megfigyeles-potlas_jelzes"><title>potlas_jelzes: Pótlás vagy ellenőrzendő kapcsolat</title>
+<text x="112" y="2042" class="key"></text>
+<text x="175" y="2042" class="name">potlas_jelzes</text>
+<text x="425" y="2042" class="small">TEXT ?</text>
+<text x="555" y="2042" >Pótlás vagy ellenőrzendő kapcsolat</text>
+</g>
+<g id="column-megfigyeles-menet_id"><title>menet_id: A forrás menetazonosítója</title>
+<text x="112" y="2068" class="key"></text>
+<text x="175" y="2068" class="name">menet_id</text>
+<text x="425" y="2068" class="small">TEXT ?</text>
+<text x="555" y="2068" >A forrás menetazonosítója</text>
+</g>
+<rect x="101" y="2076" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megfigyeles-szolgalati_nap"><title>szolgalati_nap: A menet menetrendi napja</title>
+<text x="112" y="2094" class="key"></text>
+<text x="175" y="2094" class="name">szolgalati_nap</text>
+<text x="425" y="2094" class="small">DATE ?</text>
+<text x="555" y="2094" >A menet menetrendi napja</text>
+</g>
+<g id="column-megfigyeles-kezdes"><title>kezdes: A menet forrás szerinti kezdőideje</title>
+<text x="112" y="2120" class="key"></text>
+<text x="175" y="2120" class="name">kezdes</text>
+<text x="425" y="2120" class="small">TEXT ?</text>
+<text x="555" y="2120" >A menet forrás szerinti kezdőideje</text>
+</g>
+<rect x="101" y="2128" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megfigyeles-irany"><title>irany: GTFS iránykód</title>
+<text x="112" y="2146" class="key"></text>
+<text x="175" y="2146" class="name">irany</text>
+<text x="425" y="2146" class="small">INTEGER ?</text>
+<text x="555" y="2146" >GTFS iránykód</text>
+</g>
+<g id="column-megfigyeles-menet_allapot"><title>menet_allapot: Menetállapot: rendes, törölt stb.</title>
+<text x="112" y="2172" class="key"></text>
+<text x="175" y="2172" class="name">menet_allapot</text>
+<text x="425" y="2172" class="small">INTEGER ?</text>
+<text x="555" y="2172" >Menetállapot: rendes, törölt stb.</text>
+</g>
+<rect x="101" y="2180" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megfigyeles-keses"><title>keses: Az egész menetre megadott késés, mp</title>
+<text x="112" y="2198" class="key"></text>
+<text x="175" y="2198" class="name">keses</text>
+<text x="425" y="2198" class="small">INTEGER ?</text>
+<text x="555" y="2198" >Az egész menetre megadott késés, mp</text>
+</g>
+<g id="column-megfigyeles-jarmu_id"><title>jarmu_id: A jármű azonosítója</title>
+<text x="112" y="2224" class="key"></text>
+<text x="175" y="2224" class="name">jarmu_id</text>
+<text x="425" y="2224" class="small">TEXT ?</text>
+<text x="555" y="2224" >A jármű azonosítója</text>
+</g>
+<rect x="101" y="2232" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megfigyeles-adat_ido"><title>adat_ido: Az elem saját időpontja</title>
+<text x="112" y="2250" class="key"></text>
+<text x="175" y="2250" class="name">adat_ido</text>
+<text x="425" y="2250" class="small">TIMESTAMPTZ ?</text>
+<text x="555" y="2250" >Az elem saját időpontja</text>
+</g>
+<g id="column-megfigyeles-lat"><title>lat: Földrajzi szélesség, fok</title>
+<text x="112" y="2276" class="key"></text>
+<text x="175" y="2276" class="name">lat</text>
+<text x="425" y="2276" class="small">FLOAT8 ?</text>
+<text x="555" y="2276" >Földrajzi szélesség, fok</text>
+</g>
+<rect x="101" y="2284" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megfigyeles-lon"><title>lon: Földrajzi hosszúság, fok</title>
+<text x="112" y="2302" class="key"></text>
+<text x="175" y="2302" class="name">lon</text>
+<text x="425" y="2302" class="small">FLOAT8 ?</text>
+<text x="555" y="2302" >Földrajzi hosszúság, fok</text>
+</g>
+<g id="column-megfigyeles-megallo_id"><title>megallo_id: A forrás szerinti megálló</title>
+<text x="112" y="2328" class="key"></text>
+<text x="175" y="2328" class="name">megallo_id</text>
+<text x="425" y="2328" class="small">TEXT ?</text>
+<text x="555" y="2328" >A forrás szerinti megálló</text>
+</g>
+<rect x="101" y="2336" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megfigyeles-megallo_sorrend"><title>megallo_sorrend: A forrás szerinti megállósorszám</title>
+<text x="112" y="2354" class="key"></text>
+<text x="175" y="2354" class="name">megallo_sorrend</text>
+<text x="425" y="2354" class="small">INTEGER ?</text>
+<text x="555" y="2354" >A forrás szerinti megállósorszám</text>
+</g>
+<g id="column-megfigyeles-jarmu_allapot"><title>jarmu_allapot: Érkezik, megállóban áll vagy úton van</title>
+<text x="112" y="2380" class="key"></text>
+<text x="175" y="2380" class="name">jarmu_allapot</text>
+<text x="425" y="2380" class="small">INTEGER ?</text>
+<text x="555" y="2380" >Érkezik, megállóban áll vagy úton van</text>
+</g>
+</g>
+<g id="table-megallo_frissites"><rect x="1100" y="1700" width="800" height="402" fill="white" stroke="#71808a" stroke-width="1.5"/>
+<rect x="1101" y="1701" width="798" height="59" fill="#e8edef"/>
+<text x="1112" y="1726" class="head">megallo_frissites</text>
+<text x="1112" y="1747" >Megállónként közölt időpontok</text>
+<rect x="1101" y="1760" width="798" height="30" fill="#f5f6f7"/>
+<text x="1112" y="1780" font-weight="bold">Kulcs</text>
+<text x="1175" y="1780" font-weight="bold">Oszlop</text>
+<text x="1425" y="1780" font-weight="bold">Típus</text>
+<text x="1555" y="1780" font-weight="bold">Mi van benne?</text>
+<g id="column-megallo_frissites-nyers_id"><title>nyers_id: A nyers válasz</title>
+<text x="1112" y="1808" class="key">PK/FK</text>
+<text x="1175" y="1808" class="name">nyers_id</text>
+<text x="1425" y="1808" class="small">BIGINT</text>
+<text x="1555" y="1808" >A nyers válasz</text>
+</g>
+<rect x="1101" y="1816" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megallo_frissites-megfigyeles_sorrend"><title>megfigyeles_sorrend: A szülő megfigyelés elemsorszáma</title>
+<text x="1112" y="1834" class="key">PK/FK</text>
+<text x="1175" y="1834" class="name">megfigyeles_sorrend</text>
+<text x="1425" y="1834" class="small">INTEGER</text>
+<text x="1555" y="1834" >A szülő megfigyelés elemsorszáma</text>
+</g>
+<g id="column-megallo_frissites-sorrend"><title>sorrend: A frissítés helye a listában</title>
+<text x="1112" y="1860" class="key">PK</text>
+<text x="1175" y="1860" class="name">sorrend</text>
+<text x="1425" y="1860" class="small">INTEGER</text>
+<text x="1555" y="1860" >A frissítés helye a listában</text>
+</g>
+<rect x="1101" y="1868" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megallo_frissites-megallo_id"><title>megallo_id: A forrás szerinti megálló</title>
+<text x="1112" y="1886" class="key"></text>
+<text x="1175" y="1886" class="name">megallo_id</text>
+<text x="1425" y="1886" class="small">TEXT ?</text>
+<text x="1555" y="1886" >A forrás szerinti megálló</text>
+</g>
+<g id="column-megallo_frissites-megallo_sorrend"><title>megallo_sorrend: Megállósorszám a menetben</title>
+<text x="1112" y="1912" class="key"></text>
+<text x="1175" y="1912" class="name">megallo_sorrend</text>
+<text x="1425" y="1912" class="small">INTEGER ?</text>
+<text x="1555" y="1912" >Megállósorszám a menetben</text>
+</g>
+<rect x="1101" y="1920" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megallo_frissites-allapot"><title>allapot: Megállóállapot, pl. SKIPPED / NO_DATA</title>
+<text x="1112" y="1938" class="key"></text>
+<text x="1175" y="1938" class="name">allapot</text>
+<text x="1425" y="1938" class="small">INTEGER ?</text>
+<text x="1555" y="1938" >Megállóállapot, pl. SKIPPED / NO_DATA</text>
+</g>
+<g id="column-megallo_frissites-erkezes"><title>erkezes: Közölt érkezési idő; lehet becslés</title>
+<text x="1112" y="1964" class="key"></text>
+<text x="1175" y="1964" class="name">erkezes</text>
+<text x="1425" y="1964" class="small">TIMESTAMPTZ ?</text>
+<text x="1555" y="1964" >Közölt érkezési idő; lehet becslés</text>
+</g>
+<rect x="1101" y="1972" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megallo_frissites-indulas"><title>indulas: Közölt indulási idő; lehet becslés</title>
+<text x="1112" y="1990" class="key"></text>
+<text x="1175" y="1990" class="name">indulas</text>
+<text x="1425" y="1990" class="small">TIMESTAMPTZ ?</text>
+<text x="1555" y="1990" >Közölt indulási idő; lehet becslés</text>
+</g>
+<g id="column-megallo_frissites-erkezes_keses"><title>erkezes_keses: Külön közölt érkezési késés, mp</title>
+<text x="1112" y="2016" class="key"></text>
+<text x="1175" y="2016" class="name">erkezes_keses</text>
+<text x="1425" y="2016" class="small">INTEGER ?</text>
+<text x="1555" y="2016" >Külön közölt érkezési késés, mp</text>
+</g>
+<rect x="1101" y="2024" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megallo_frissites-indulas_keses"><title>indulas_keses: Külön közölt indulási késés, mp</title>
+<text x="1112" y="2042" class="key"></text>
+<text x="1175" y="2042" class="name">indulas_keses</text>
+<text x="1425" y="2042" class="small">INTEGER ?</text>
+<text x="1555" y="2042" >Külön közölt indulási késés, mp</text>
+</g>
+<g id="column-megallo_frissites-erkezes_bizonytalansag"><title>erkezes_bizonytalansag: Az érkezési becslés bizonytalansága, mp</title>
+<text x="1112" y="2068" class="key"></text>
+<text x="1175" y="2068" class="name">erkezes_bizonytalansag</text>
+<text x="1425" y="2068" class="small">INTEGER ?</text>
+<text x="1555" y="2068" >Az érkezési becslés bizonytalansága, mp</text>
+</g>
+<rect x="1101" y="2076" width="798" height="26" fill="#fafbfc"/>
+<g id="column-megallo_frissites-indulas_bizonytalansag"><title>indulas_bizonytalansag: Az indulási becslés bizonytalansága, mp</title>
+<text x="1112" y="2094" class="key"></text>
+<text x="1175" y="2094" class="name">indulas_bizonytalansag</text>
+<text x="1425" y="2094" class="small">INTEGER ?</text>
+<text x="1555" y="2094" >Az indulási becslés bizonytalansága, mp</text>
+</g>
+</g>
+<g id="table-zavar"><rect x="2100" y="1700" width="800" height="324" fill="white" stroke="#71808a" stroke-width="1.5"/>
+<rect x="2101" y="1701" width="798" height="59" fill="#e8edef"/>
+<text x="2112" y="1726" class="head">zavar</text>
+<text x="2112" y="1747" >Forgalmi zavarok</text>
+<rect x="2101" y="1760" width="798" height="30" fill="#f5f6f7"/>
+<text x="2112" y="1780" font-weight="bold">Kulcs</text>
+<text x="2175" y="1780" font-weight="bold">Oszlop</text>
+<text x="2425" y="1780" font-weight="bold">Típus</text>
+<text x="2555" y="1780" font-weight="bold">Mi van benne?</text>
+<g id="column-zavar-nyers_id"><title>nyers_id: A nyers válasz</title>
+<text x="2112" y="1808" class="key">PK/FK</text>
+<text x="2175" y="1808" class="name">nyers_id</text>
+<text x="2425" y="1808" class="small">BIGINT</text>
+<text x="2555" y="1808" >A nyers válasz</text>
+</g>
+<rect x="2101" y="1816" width="798" height="26" fill="#fafbfc"/>
+<g id="column-zavar-sorrend"><title>sorrend: A zavar helye a válaszban</title>
+<text x="2112" y="1834" class="key">PK</text>
+<text x="2175" y="1834" class="name">sorrend</text>
+<text x="2425" y="1834" class="small">INTEGER</text>
+<text x="2555" y="1834" >A zavar helye a válaszban</text>
+</g>
+<g id="column-zavar-elem_id"><title>elem_id: A zavar forrásbeli azonosítója</title>
+<text x="2112" y="1860" class="key"></text>
+<text x="2175" y="1860" class="name">elem_id</text>
+<text x="2425" y="1860" class="small">TEXT ?</text>
+<text x="2555" y="1860" >A zavar forrásbeli azonosítója</text>
+</g>
+<rect x="2101" y="1868" width="798" height="26" fill="#fafbfc"/>
+<g id="column-zavar-ok"><title>ok: A zavar okának GTFS-kódja</title>
+<text x="2112" y="1886" class="key"></text>
+<text x="2175" y="1886" class="name">ok</text>
+<text x="2425" y="1886" class="small">INTEGER ?</text>
+<text x="2555" y="1886" >A zavar okának GTFS-kódja</text>
+</g>
+<g id="column-zavar-hatas"><title>hatas: A közlekedési hatás GTFS-kódja</title>
+<text x="2112" y="1912" class="key"></text>
+<text x="2175" y="1912" class="name">hatas</text>
+<text x="2425" y="1912" class="small">INTEGER ?</text>
+<text x="2555" y="1912" >A közlekedési hatás GTFS-kódja</text>
+</g>
+<rect x="2101" y="1920" width="798" height="26" fill="#fafbfc"/>
+<g id="column-zavar-cim"><title>cim: Rövid cím</title>
+<text x="2112" y="1938" class="key"></text>
+<text x="2175" y="1938" class="name">cim</text>
+<text x="2425" y="1938" class="small">TEXT ?</text>
+<text x="2555" y="1938" >Rövid cím</text>
+</g>
+<g id="column-zavar-leiras"><title>leiras: A zavar szövege</title>
+<text x="2112" y="1964" class="key"></text>
+<text x="2175" y="1964" class="name">leiras</text>
+<text x="2425" y="1964" class="small">TEXT ?</text>
+<text x="2555" y="1964" >A zavar szövege</text>
+</g>
+<rect x="2101" y="1972" width="798" height="26" fill="#fafbfc"/>
+<g id="column-zavar-idoszakok"><title>idoszakok: Érvényességi időszakok listája</title>
+<text x="2112" y="1990" class="key"></text>
+<text x="2175" y="1990" class="name">idoszakok</text>
+<text x="2425" y="1990" class="small">JSONB</text>
+<text x="2555" y="1990" >Érvényességi időszakok listája</text>
+</g>
+<g id="column-zavar-erintettek"><title>erintettek: Érintett vonalak, menetek, megállók</title>
+<text x="2112" y="2016" class="key"></text>
+<text x="2175" y="2016" class="name">erintettek</text>
+<text x="2425" y="2016" class="small">JSONB</text>
+<text x="2555" y="2016" >Érintett vonalak, menetek, megállók</text>
+</g>
+</g>
+<g id="table-idojaras"><rect x="3100" y="1700" width="800" height="454" fill="white" stroke="#71808a" stroke-width="1.5"/>
+<rect x="3101" y="1701" width="798" height="59" fill="#e8edef"/>
+<text x="3112" y="1726" class="head">idojaras</text>
+<text x="3112" y="1747" >Időjárási modelladatok</text>
+<rect x="3101" y="1760" width="798" height="30" fill="#f5f6f7"/>
+<text x="3112" y="1780" font-weight="bold">Kulcs</text>
+<text x="3175" y="1780" font-weight="bold">Oszlop</text>
+<text x="3425" y="1780" font-weight="bold">Típus</text>
+<text x="3555" y="1780" font-weight="bold">Mi van benne?</text>
+<g id="column-idojaras-nyers_id"><title>nyers_id: A nyers válasz</title>
+<text x="3112" y="1808" class="key">PK/FK</text>
+<text x="3175" y="1808" class="name">nyers_id</text>
+<text x="3425" y="1808" class="small">BIGINT</text>
+<text x="3555" y="1808" >A nyers válasz</text>
+</g>
+<rect x="3101" y="1816" width="798" height="26" fill="#fafbfc"/>
+<g id="column-idojaras-terseg"><title>terseg: A három kijelölt térség egyike</title>
+<text x="3112" y="1834" class="key">PK</text>
+<text x="3175" y="1834" class="name">terseg</text>
+<text x="3425" y="1834" class="small">TEXT</text>
+<text x="3555" y="1834" >A három kijelölt térség egyike</text>
+</g>
+<g id="column-idojaras-adat_ido"><title>adat_ido: A modelladat érvényességi ideje</title>
+<text x="3112" y="1860" class="key"></text>
+<text x="3175" y="1860" class="name">adat_ido</text>
+<text x="3425" y="1860" class="small">TIMESTAMPTZ ?</text>
+<text x="3555" y="1860" >A modelladat érvényességi ideje</text>
+</g>
+<rect x="3101" y="1868" width="798" height="26" fill="#fafbfc"/>
+<g id="column-idojaras-interval_mp"><title>interval_mp: Az adat időtartama, mp</title>
+<text x="3112" y="1886" class="key"></text>
+<text x="3175" y="1886" class="name">interval_mp</text>
+<text x="3425" y="1886" class="small">INTEGER ?</text>
+<text x="3555" y="1886" >Az adat időtartama, mp</text>
+</g>
+<g id="column-idojaras-kert_lat"><title>kert_lat: A kért pont szélessége</title>
+<text x="3112" y="1912" class="key"></text>
+<text x="3175" y="1912" class="name">kert_lat</text>
+<text x="3425" y="1912" class="small">FLOAT8 ?</text>
+<text x="3555" y="1912" >A kért pont szélessége</text>
+</g>
+<rect x="3101" y="1920" width="798" height="26" fill="#fafbfc"/>
+<g id="column-idojaras-kert_lon"><title>kert_lon: A kért pont hosszúsága</title>
+<text x="3112" y="1938" class="key"></text>
+<text x="3175" y="1938" class="name">kert_lon</text>
+<text x="3425" y="1938" class="small">FLOAT8 ?</text>
+<text x="3555" y="1938" >A kért pont hosszúsága</text>
+</g>
+<g id="column-idojaras-lat"><title>lat: A visszaadott rácspont szélessége</title>
+<text x="3112" y="1964" class="key"></text>
+<text x="3175" y="1964" class="name">lat</text>
+<text x="3425" y="1964" class="small">FLOAT8 ?</text>
+<text x="3555" y="1964" >A visszaadott rácspont szélessége</text>
+</g>
+<rect x="3101" y="1972" width="798" height="26" fill="#fafbfc"/>
+<g id="column-idojaras-lon"><title>lon: A visszaadott rácspont hosszúsága</title>
+<text x="3112" y="1990" class="key"></text>
+<text x="3175" y="1990" class="name">lon</text>
+<text x="3425" y="1990" class="small">FLOAT8 ?</text>
+<text x="3555" y="1990" >A visszaadott rácspont hosszúsága</text>
+</g>
+<g id="column-idojaras-homerseklet"><title>homerseklet: Hőmérséklet, Celsius-fok</title>
+<text x="3112" y="2016" class="key"></text>
+<text x="3175" y="2016" class="name">homerseklet</text>
+<text x="3425" y="2016" class="small">FLOAT8 ?</text>
+<text x="3555" y="2016" >Hőmérséklet, Celsius-fok</text>
+</g>
+<rect x="3101" y="2024" width="798" height="26" fill="#fafbfc"/>
+<g id="column-idojaras-csapadek"><title>csapadek: Az előző időtartam csapadéka, mm</title>
+<text x="3112" y="2042" class="key"></text>
+<text x="3175" y="2042" class="name">csapadek</text>
+<text x="3425" y="2042" class="small">FLOAT8 ?</text>
+<text x="3555" y="2042" >Az előző időtartam csapadéka, mm</text>
+</g>
+<g id="column-idojaras-szel"><title>szel: Szélsebesség, km/h</title>
+<text x="3112" y="2068" class="key"></text>
+<text x="3175" y="2068" class="name">szel</text>
+<text x="3425" y="2068" class="small">FLOAT8 ?</text>
+<text x="3555" y="2068" >Szélsebesség, km/h</text>
+</g>
+<rect x="3101" y="2076" width="798" height="26" fill="#fafbfc"/>
+<g id="column-idojaras-kod"><title>kod: WMO időjárási állapotkód</title>
+<text x="3112" y="2094" class="key"></text>
+<text x="3175" y="2094" class="name">kod</text>
+<text x="3425" y="2094" class="small">INTEGER ?</text>
+<text x="3555" y="2094" >WMO időjárási állapotkód</text>
+</g>
+<g id="column-idojaras-egysegek"><title>egysegek: A válaszban megadott mértékegységek</title>
+<text x="3112" y="2120" class="key"></text>
+<text x="3175" y="2120" class="name">egysegek</text>
+<text x="3425" y="2120" class="small">JSONB ?</text>
+<text x="3555" y="2120" >A válaszban megadott mértékegységek</text>
+</g>
+<rect x="3101" y="2128" width="798" height="26" fill="#fafbfc"/>
+<g id="column-idojaras-parameterek"><title>parameterek: A kérés beállításai</title>
+<text x="3112" y="2146" class="key"></text>
+<text x="3175" y="2146" class="name">parameterek</text>
+<text x="3425" y="2146" class="small">JSONB ?</text>
+<text x="3555" y="2146" >A kérés beállításai</text>
+</g>
+</g>
+<g id="table-adatminoseg"><rect x="2100" y="180" width="800" height="558" fill="white" stroke="#71808a" stroke-width="1.5"/>
+<rect x="2101" y="181" width="798" height="59" fill="#f2edda"/>
+<text x="2112" y="206" class="head">adatminoseg</text>
+<text x="2112" y="227" >NÉZET — számított eredmény, nincs külön tárolt sora</text>
+<rect x="2101" y="240" width="798" height="30" fill="#f5f6f7"/>
+<text x="2112" y="260" font-weight="bold">Kulcs</text>
+<text x="2175" y="260" font-weight="bold">Oszlop</text>
+<text x="2425" y="260" font-weight="bold">Típus</text>
+<text x="2555" y="260" font-weight="bold">Mi van benne?</text>
+<g id="column-adatminoseg-ora_utc"><title>ora_utc: Az ellenőrzött óra kezdete, UTC</title>
+<text x="2112" y="288" class="key"></text>
+<text x="2175" y="288" class="name">ora_utc</text>
+<text x="2425" y="288" class="small">TIMESTAMPTZ</text>
+<text x="2555" y="288" >Az ellenőrzött óra kezdete, UTC</text>
+</g>
+<rect x="2101" y="296" width="798" height="26" fill="#fafbfc"/>
+<g id="column-adatminoseg-forras"><title>forras: Adatforrás</title>
+<text x="2112" y="314" class="key"></text>
+<text x="2175" y="314" class="name">forras</text>
+<text x="2425" y="314" class="small">TEXT</text>
+<text x="2555" y="314" >Adatforrás</text>
+</g>
+<g id="column-adatminoseg-ellenorzott_utc"><title>ellenorzott_utc: Eddig a pillanatig számol az órában</title>
+<text x="2112" y="340" class="key"></text>
+<text x="2175" y="340" class="name">ellenorzott_utc</text>
+<text x="2425" y="340" class="small">TIMESTAMPTZ</text>
+<text x="2555" y="340" >Eddig a pillanatig számol az órában</text>
+</g>
+<rect x="2101" y="348" width="798" height="26" fill="#fafbfc"/>
+<g id="column-adatminoseg-probak"><title>probak: Lekérési kísérletek száma</title>
+<text x="2112" y="366" class="key"></text>
+<text x="2175" y="366" class="name">probak</text>
+<text x="2425" y="366" class="small">BIGINT</text>
+<text x="2555" y="366" >Lekérési kísérletek száma</text>
+</g>
+<g id="column-adatminoseg-siker"><title>siker: Sikeres lekérések száma</title>
+<text x="2112" y="392" class="key"></text>
+<text x="2175" y="392" class="name">siker</text>
+<text x="2425" y="392" class="small">BIGINT</text>
+<text x="2555" y="392" >Sikeres lekérések száma</text>
+</g>
+<rect x="2101" y="400" width="798" height="26" fill="#fafbfc"/>
+<g id="column-adatminoseg-hibak"><title>hibak: Sikertelen lekérések száma</title>
+<text x="2112" y="418" class="key"></text>
+<text x="2175" y="418" class="name">hibak</text>
+<text x="2425" y="418" class="small">BIGINT</text>
+<text x="2555" y="418" >Sikertelen lekérések száma</text>
+</g>
+<g id="column-adatminoseg-regi_feed"><title>regi_feed: Régi válaszok száma</title>
+<text x="2112" y="444" class="key"></text>
+<text x="2175" y="444" class="name">regi_feed</text>
+<text x="2425" y="444" class="small">BIGINT</text>
+<text x="2555" y="444" >Régi válaszok száma</text>
+</g>
+<rect x="2101" y="452" width="798" height="26" fill="#fafbfc"/>
+<g id="column-adatminoseg-ido_hianyzik"><title>ido_hianyzik: Hiányzó fejlécidők száma</title>
+<text x="2112" y="470" class="key"></text>
+<text x="2175" y="470" class="name">ido_hianyzik</text>
+<text x="2425" y="470" class="small">BIGINT</text>
+<text x="2555" y="470" >Hiányzó fejlécidők száma</text>
+</g>
+<g id="column-adatminoseg-max_jarmu"><title>max_jarmu: Legnagyobb pillanatnyi járműszám</title>
+<text x="2112" y="496" class="key"></text>
+<text x="2175" y="496" class="name">max_jarmu</text>
+<text x="2425" y="496" class="small">INTEGER</text>
+<text x="2555" y="496" >Legnagyobb pillanatnyi járműszám</text>
+</g>
+<rect x="2101" y="504" width="798" height="26" fill="#fafbfc"/>
+<g id="column-adatminoseg-max_menetfrissites"><title>max_menetfrissites: Legnagyobb pillanatnyi frissítésszám</title>
+<text x="2112" y="522" class="key"></text>
+<text x="2175" y="522" class="name">max_menetfrissites</text>
+<text x="2425" y="522" class="small">INTEGER</text>
+<text x="2555" y="522" >Legnagyobb pillanatnyi frissítésszám</text>
+</g>
+<g id="column-adatminoseg-regi_pontok"><title>regi_pontok: Régi időjárási pontok összege</title>
+<text x="2112" y="548" class="key"></text>
+<text x="2175" y="548" class="name">regi_pontok</text>
+<text x="2425" y="548" class="small">BIGINT</text>
+<text x="2555" y="548" >Régi időjárási pontok összege</text>
+</g>
+<rect x="2101" y="556" width="798" height="26" fill="#fafbfc"/>
+<g id="column-adatminoseg-hianyzo_ertekek"><title>hianyzo_ertekek: Hiányzó időjárási értékek összege</title>
+<text x="2112" y="574" class="key"></text>
+<text x="2175" y="574" class="name">hianyzo_ertekek</text>
+<text x="2425" y="574" class="small">BIGINT</text>
+<text x="2555" y="574" >Hiányzó időjárási értékek összege</text>
+</g>
+<g id="column-adatminoseg-max_keresi_res_mp"><title>max_keresi_res_mp: Legnagyobb szünet a próbák közt, mp</title>
+<text x="2112" y="600" class="key"></text>
+<text x="2175" y="600" class="name">max_keresi_res_mp</text>
+<text x="2425" y="600" class="small">NUMERIC ?</text>
+<text x="2555" y="600" >Legnagyobb szünet a próbák közt, mp</text>
+</g>
+<rect x="2101" y="608" width="798" height="26" fill="#fafbfc"/>
+<g id="column-adatminoseg-max_sikeres_res_mp"><title>max_sikeres_res_mp: Legnagyobb szünet a sikerek közt, mp</title>
+<text x="2112" y="626" class="key"></text>
+<text x="2175" y="626" class="name">max_sikeres_res_mp</text>
+<text x="2425" y="626" class="small">NUMERIC ?</text>
+<text x="2555" y="626" >Legnagyobb szünet a sikerek közt, mp</text>
+</g>
+<g id="column-adatminoseg-utolso_keres_ota_mp"><title>utolso_keres_ota_mp: Utolsó próbálkozás óta eltelt idő, mp</title>
+<text x="2112" y="652" class="key"></text>
+<text x="2175" y="652" class="name">utolso_keres_ota_mp</text>
+<text x="2425" y="652" class="small">NUMERIC ?</text>
+<text x="2555" y="652" >Utolsó próbálkozás óta eltelt idő, mp</text>
+</g>
+<rect x="2101" y="660" width="798" height="26" fill="#fafbfc"/>
+<g id="column-adatminoseg-utolso_siker_ota_mp"><title>utolso_siker_ota_mp: Utolsó siker óta eltelt idő, mp</title>
+<text x="2112" y="678" class="key"></text>
+<text x="2175" y="678" class="name">utolso_siker_ota_mp</text>
+<text x="2425" y="678" class="small">NUMERIC ?</text>
+<text x="2555" y="678" >Utolsó siker óta eltelt idő, mp</text>
+</g>
+<g id="column-adatminoseg-teljes_orara_tervezett"><title>teljes_orara_tervezett: Teljes órára tervezett kérésszám</title>
+<text x="2112" y="704" class="key"></text>
+<text x="2175" y="704" class="name">teljes_orara_tervezett</text>
+<text x="2425" y="704" class="small">INTEGER</text>
+<text x="2555" y="704" >Teljes órára tervezett kérésszám</text>
+</g>
+<rect x="2101" y="712" width="798" height="26" fill="#fafbfc"/>
+<g id="column-adatminoseg-reszora_lehet"><title>reszora_lehet: A szélső óra részóra is lehet</title>
+<text x="2112" y="730" class="key"></text>
+<text x="2175" y="730" class="name">reszora_lehet</text>
+<text x="2425" y="730" class="small">BOOLEAN</text>
+<text x="2555" y="730" >A szélső óra részóra is lehet</text>
+</g>
+</g>
+<g id="legend"><rect x="3100" y="180" width="800" height="630" fill="#fafbfc" stroke="#71808a" stroke-width="1.5"/>
+<text x="3120" y="212" class="head">Jelmagyarázat</text>
+<text x="3120" y="245" class="note">PK: elsődleges kulcs. Több PK-oszlop együtt azonosít egy sort.</text>
+<text x="3120" y="272" class="note">FK: idegen kulcs, vagyis adatbázisban ellenőrzött hivatkozás.</text>
+<text x="3120" y="299" class="note">U1: a forrás és az ellenőrző összeg együtt egyedi.</text>
+<text x="3120" y="326" class="note">?: az érték NULL is lehet. A NULL nem nulla.</text>
+<text x="3120" y="380" class="note">Crow’s Foot: a vonalvégek mutatják a kapcsolatok számosságát.</text>
+<text x="3120" y="488" class="note">A kapcsolat egyik végén egy szülősor, a másikon több gyereksor lehet.</text>
+<text x="3120" y="515" class="note">Az összetett kulcsok oszlopait együtt kell használni.</text>
+<text x="3120" y="542" class="note">A szaggatott nyíl számítási függőség, nem idegen kulcs.</text>
+<text x="3120" y="596" class="note">A valós idejű menet és a menetrendi menet párosítása külön ellenőrzés.</text>
+<text x="3120" y="623" class="note">Köztük nincs kikényszerített FK: új vagy ismeretlen menet is jöhet.</text>
+<text x="3120" y="650" class="note">A menetrend_id több helyen a nyers menetrendi ZIP-re mutat.</text>
+<text x="3120" y="704" class="note">FLOAT8: DOUBLE PRECISION, vagyis dupla pontosságú tört szám.</text>
+<text x="3120" y="731" class="note">TIMESTAMPTZ: időpont. A megjelenítés időzónája külön beállítás.</text>
+<text x="3120" y="758" class="note">Menetrendi másodperc: 86400 fölé is mehet, például 25:10:00.</text>
+<text x="3120" y="785" class="note">A közölt megállói idő gyakran becslés; az időjárás modelladat.</text>
+<path class="edge" d="M3130 420 H3250" marker-start="url(#one)" marker-end="url(#many)"/>
+<text x="3280" y="425" class="note">pontosan egy → nulla vagy több</text>
+<path class="edge" d="M3130 455 H3250" marker-start="url(#optional)" marker-end="url(#many)"/>
+<text x="3280" y="460" class="note">nulla vagy egy → nulla vagy több</text>
+</g>
+<text x="100" y="2425" class="subtitle">A szerkezet forrása: adatbazis.sql. A rajz a tényleges kulcsokat mutatja; nem ír elő új adatbázis-kapcsolatokat.</text>
+</svg>

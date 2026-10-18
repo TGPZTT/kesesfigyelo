@@ -38,6 +38,7 @@ PostgreSQL 18.6-tal kipróbálva. A betöltő a már mentett fájlokat olvassa,
 nem kér új BKK- vagy időjárási adatot. Egy futás véges, alapból legfeljebb 20 új naplót tölt be.
 Kapcsolók nélkül csak a súgót írja ki.
 Tíz tábla és egy adatminőség-nézet készül; a táblázatos séma a [módszertanban](MODSZERTAN.md#adatbázisba-töltés) van.
+Az [adatbázisábrán](adatbazis.svg) az oszlopok jelentése és a kulcsok is szerepelnek.
 A pótlóbuszok és az ellenőrzendő új menetek is bekerülnek, külön `potlas_jelzes` mezővel.
 A `potolt_vonal_id` névegyezésből kapott kapcsolatjelölt, az eredeti buszazonosító megmarad.
 
@@ -113,5 +114,50 @@ A betöltő két adag között `inactive`, ez rendben van. Az időzítő legyen 
 A napi adatbázismentés a `data/adatbazis` mappába kerül, PostgreSQL custom (`.dump`) formátumban.
 A kész fájlokat a meglévő felhőmentés is másolja. Visszaállításra a `pg_restore` való;
 a próba külön, üres adatbázisba történik. A futó PostgreSQL adatkönyvtárát nem másolom mentésként.
+
+## Elemzés
+
+Az `elemzes.py` a már betöltött adatbázisból olvas, nem gyűjt és nem ír az adatbázisba.
+A nap és a vizsgált vonalak mellett meg kell adni a menetrendi fájl `nyers_fajl.id` azonosítóját.
+Az érintett menetrendváltozatokat összeveti; eltérésnél megáll.
+
+Példa a 4–6-ra, ha a használt menetrend azonosítója 1:
+
+```powershell
+uv run --locked python elemzes.py --nap 2026-10-17 --vonal 3046 --menetrend 1
+```
+
+Az eredmény a `data/elemzes/indulasok.json`, a megismételhető helyi minta a `minta.json.gz`.
+Kis próbához a `--menet` kapcsolóval menetazonosítók is megadhatók, vesszővel elválasztva.
+Ilyen részleges mintából nem számol teljes órás követést.
+
+Újraszámolás a kimentett mintából, adatbázis nélkül:
+
+```powershell
+uv run --locked python elemzes.py --nap 2026-10-17 --minta data/elemzes/minta.json.gz
+uv run --locked python -m unittest test_elemzes
+```
+
+Az adatbázisos elemzési próbákhoz ugyanaz a `TEST_DATABASE_CONFIG` kell, mint a betöltő tesztjeihez.
+Az indulások minősége, a kizárt esetek és a felhasznált darabszámok is megmaradnak.
+A késési összesítés megállói indulásokat számol; a követési órák külön eredmények.
+
+## Webes nézet
+
+Helyi indítás Streamlittel:
+
+```powershell
+uv run --locked --extra web streamlit run app.py --server.address 127.0.0.1
+```
+
+Az oldal a `data/elemzes*/indulasok.json` fájlokat olvassa. Ehhez előbb a fenti elemzést kell lefuttatni,
+vagy egy már kiszámolt mintát bemásolni. A weboldal nem kér élő BKK-adatot és nem csatlakozik az adatbázishoz.
+Három nézete van: vonaláttekintés, vonalrészlet és adatminőség. A grafikonok Plotlyval készülnek.
+A webes csomagok külön, `web` csoportban vannak; a gyűjtőnek nincs rájuk szüksége.
+
+A lekérések órás minőségéhez az elemzés mappájába tett `adatminoseg.json` kell.
+Ez a gyűjtő mentett `data/adatminoseg/` összesítéseinek az adott napra szűrt, időrendbe rendezett listája.
+Az órák UTC szerint vannak mentve, a weboldal budapesti időben mutatja őket.
+Ha ez a fájl hiányzik, az oldal ezt jelzi; az indulások besorolása ettől még megtekinthető.
 
 Adatok forrása: BKK Zrt., CC BY 4.0. Időjárás: [Open-Meteo](https://open-meteo.com/), CC BY 4.0; az ingyenes API nem üzleti használatra való.

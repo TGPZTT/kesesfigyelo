@@ -8,6 +8,12 @@ dependencies = [
     "tzdata>=2026.5",
 ]
 
+[project.optional-dependencies]
+web = [
+    "plotly>=6,<7",
+    "streamlit>=1.50,<2",
+]
+
 [dependency-groups]
 dev = ["pip>=26.2,<27", "ruff>=0.14,<1"]
 

@@ -115,6 +115,10 @@ CREATE TABLE IF NOT EXISTS megfigyeles (
     megallo_id TEXT,
     megallo_sorrend INTEGER, -- A megálló sorszáma a menetben, a forrás szerint.
     jarmu_allapot INTEGER, -- GTFS current_status: érkezik, megállóban áll vagy úton van.
+    sebesseg DOUBLE PRECISION, -- A közölt sebesség méter/másodpercben, nem két pontból számítva.
+    ajto_nyitva BOOLEAN, -- BKK-kiegészítés. A hiányzó jel NULL, nem zárt ajtó.
+    megallo_tavolsag INTEGER, -- BKK stop_distance. HÉV-nél negatív is lehet.
+    letert BOOLEAN, -- A forrás útvonaltól eltérést jelzett-e.
     PRIMARY KEY (nyers_id, sorrend)
 );
 

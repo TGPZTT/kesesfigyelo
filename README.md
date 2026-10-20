@@ -140,7 +140,9 @@ uv run --locked python -m unittest test_elemzes
 
 Az adatbázisos elemzési próbákhoz ugyanaz a `TEST_DATABASE_CONFIG` kell, mint a betöltő tesztjeihez.
 Az indulások minősége, a kizárt esetek és a felhasznált darabszámok is megmaradnak.
-A késési összesítés megállói indulásokat számol; a követési órák külön eredmények.
+Az összesítés a továbbhaladások utólag közölt idejét használja, mozgásellenőrzéssel és BKK-ajtóadatokkal.
+Az áthaladások is megmaradnak. A HÉV külön eljárással készül, hivatalos pontosságot ebből nem számolok.
+A régi adatbázisban hiányzó mezőkhöz külön sémaátállítás és a nyers adatok visszatöltése kell.
 
 ## Webes nézet
 
@@ -152,12 +154,70 @@ uv run --locked --extra web streamlit run app.py --server.address 127.0.0.1
 
 Az oldal a `data/elemzes*/indulasok.json` fájlokat olvassa. Ehhez előbb a fenti elemzést kell lefuttatni,
 vagy egy már kiszámolt mintát bemásolni. A weboldal nem kér élő BKK-adatot és nem csatlakozik az adatbázishoz.
-Három nézete van: vonaláttekintés, vonalrészlet és adatminőség. A grafikonok Plotlyval készülnek.
-A webes csomagok külön, `web` csoportban vannak; a gyűjtőnek nincs rájuk szüksége.
+Öt oldala van, áttekintés, járatonkénti részletek, adatminőség, időjárás és HÉV. A grafikonok Plotlyval készülnek.
+Bal oldalon több nap is kijelölhető, a dátum mellett a hét napja is látszik.
+A közös eredményt a megfigyelésekből számolja. Egy napot kiválasztva külön is megnézhető.
+Az irányok végállomásnevet kapnak, a 4–6 várakozásánál megálló választható.
+A buszos példában a várakozás és a menetidő együtt szerepel, néhány közös felszállóhely és célpont között.
+A grafikonok a járműtípus BKK-színét használják.
+Az áttekintésben az egy- vagy kétperces menetrendi eltérés alapján összehasonlíthatók a vonalak.
+A H8-nál a közölt idők eltérése és a vonatok közti idő vizsgálható, néhány fő állomás és irány közül választva.
+A HÉV közölt indulását nem keveri a helyzetből becsült érkezéssel teljes menetidővé.
+Az oldal csak az új módszerrel készült napokat olvassa. A régi exportokat újra kell számolni.
+Az időjárásnézet a nap és napszak átlagos különbségét is figyelembe veszi. Oksági hatást nem állít.
+A webes csomagok külön, `web` csoportban vannak, a gyűjtőnek nincs rájuk szüksége.
+
+A szerveres változat [itt nyitható meg](https://13.140.139.74/), belépés nélkül.
+Caddy kezeli a HTTPS-t és az IP-cím tanúsítványának automatikus megújítását.
+A `kesesfigyelo-web.service` külön felhasználóval és Python-környezettel fut az `/opt/kesesfigyelo-web` mappából.
+Csak az ellenőrzött kis exportokat és a tisztított frissítési állapotot olvashatja.
+A napi feldolgozás után ezek automatikusan átkerülnek a web mappájába. A laptopnak nem kell bekapcsolva lennie.
+Új kódot külön kell ide áttenni és a webszolgáltatást újraindítani. A Git-push önmagában nem telepít.
 
 A lekérések órás minőségéhez az elemzés mappájába tett `adatminoseg.json` kell.
 Ez a gyűjtő mentett `data/adatminoseg/` összesítéseinek az adott napra szűrt, időrendbe rendezett listája.
 Az órák UTC szerint vannak mentve, a weboldal budapesti időben mutatja őket.
 Ha ez a fájl hiányzik, az oldal ezt jelzi; az indulások besorolása ettől még megtekinthető.
+
+## Napi eredmények
+
+Egy lezárt nap feldolgozása a meglévő adatbázisból, például a VPS-en:
+
+```bash
+.venv-db/bin/python napi.py --nap 2026-10-19
+```
+
+Nap nélkül a tegnapi budapesti napot választja, leghamarabb hajnali 4 után.
+A betöltött adatoknak is el kell érniük a nap utáni négyórás szegélyt.
+A menetrendet a napi lekérések alapján választja és a változatokat összeveti.
+Az eredmény és a megismételhető minta külön, időbélyeges mappába kerül.
+Hibás futás nem írja felül a korábbi jó eredményt.
+A tíz alapvonal mellett külön elkészül a H8 és a három térség időjárási összesítése.
+Ezek hiánya vagy hibája külön jelzést kap. A mentett mintába az újraszámoláshoz szükséges kiegészítések is bekerülnek.
+
+A kész eredmény letöltése a laptopra a beállított SSH-kapcsolattal:
+
+```powershell
+uv run --locked --extra web python napi.py --letoltes kesesfigyelo --nap 2026-10-19
+```
+
+Csak a kis összesítést és az órás adatminőséget másolja, ellenőrző összeggel.
+A nyers adatok és az adatbázis a szerveren maradnak.
+A web percenként észreveszi az új helyi fájlt. Alapból minden kész napot összesít, az újakat is.
+Kézi napválasztáskor a kijelölés megmarad. A számok és az eredményeket leíró mondatok együtt frissülnek.
+A felület a helyi másolás és a szerveres elemzés állapotát külön mutatja.
+Kikapcsolt laptopon nincs helyi frissítés.
+
+A VPS `kesesfigyelo-elemzes.timer` időzítője budapesti idő szerint reggel 06.15-kor dolgozza fel a tegnapi napot.
+A laptop `Kesesfigyelo eredmenyek` Windows-feladata 09.00-kor és bejelentkezéskor másolja át a kész eredményt.
+Csak bejelentkezett felhasználóval fut, nem ébreszti fel a gépet. Reggel 9 előtt még az előző kész napot kéri.
+Hálózati hibánál félóránként legfeljebb háromszor újrapróbálkozik.
+Többnapos kihagyás után a köztes napok a fenti `--nap` kapcsolóval tölthetők le.
+
+Az új számítás és átadás próbái:
+
+```powershell
+uv run --locked --extra web python -m unittest test_elemzes test_napi test_app
+```
 
 Adatok forrása: BKK Zrt., CC BY 4.0. Időjárás: [Open-Meteo](https://open-meteo.com/), CC BY 4.0; az ingyenes API nem üzleti használatra való.

@@ -70,10 +70,8 @@ def retry_after(ertek, now=None):
         datum = parsedate_to_datetime(ertek)
         if datum.tzinfo is None:
             datum = datum.replace(tzinfo=UTC)
-        return min(
-            MAX_VARAKOZAS,
-            max(0, math.ceil(datum.timestamp() - (time.time() if now is None else now))),
-        )
+        hatralevo = math.ceil(datum.timestamp() - (time.time() if now is None else now))
+        return min(MAX_VARAKOZAS, max(0, hatralevo))
     except (TypeError, ValueError, OverflowError):
         return None
 
@@ -557,7 +555,7 @@ def futtat(data, kulcs, egyszer=False, forrasok=None):
         forrasok = list(FORRASOK) if egyszer else list(PERIODUSOK)
     kezdet = time.monotonic()
     esedekes = {s: kezdet + i * MIN_KOZ for i, s in enumerate(forrasok)}
-    hibak = {s: 0 for s in forrasok}
+    hibak = dict.fromkeys(forrasok, 0)
     elozok = {s: utolso(data, s) for s in forrasok}
     menetrend = utolso(data, "Menetrend", csak_siker=True)
     if not ervenyes_menetrend(data, menetrend):

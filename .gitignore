@@ -7,3 +7,6 @@ __pycache__/
 *.py[cod]
 .ruff_cache/
 .gyujto-atmeneti/
+.napi-allapot.json
+.napi-zar
+.napi-atmeneti/

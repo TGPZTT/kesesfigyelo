@@ -27,7 +27,6 @@ mappa = Path(__file__).resolve().parent
 beallitas = (mappa / ".env.bkk").read_text(encoding="utf-8").strip()
 kulcs = beallitas.removeprefix("BKK_API_KEY=").strip()
 
-# Mindhárom adatforrást egyszer kérjük le.
-api_proba("VehiclePositions", kulcs)  # Járművek helyzete
-api_proba("TripUpdates", kulcs)  # Menetek frissítései
-api_proba("Alerts", kulcs)  # Zavarok
+# Egy-egy kérés, ebben a sorrendben. Hibánál a következő forrás már nem indul el.
+for forras in ("VehiclePositions", "TripUpdates", "Alerts"):
+    api_proba(forras, kulcs)

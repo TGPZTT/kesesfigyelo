@@ -17,6 +17,7 @@ from psycopg import sql
 
 import betolto
 import gyujto
+from bkk_bovites import JARMU_BOVITES, jarmu_bovites
 
 
 # Ugyanaz a megálló kétszer szerepel, a harmadik idő már másnapra nyúlik.
@@ -74,6 +75,34 @@ def kis_idojaras(ido=1792152000):
         "current": {"time": ido, "interval": 900, "temperature_2m": 10.5,
                     "precipitation": 0, "wind_speed_10m": 2.0, "weather_code": 0},
     } for hely in gyujto.IDOJARAS_PONTOK.values()]
+
+
+class BovitesProba(unittest.TestCase):
+    def test_hianyzo_mezo_nem_zart_ajto(self):
+        v = pb.VehicleDescriptor()
+        self.assertEqual(jarmu_bovites(v), {"ajto_nyitva": None, "megallo_tavolsag": None, "letert": None})
+        v.Extensions[JARMU_BOVITES].vehicle_model = "proba"
+        self.assertIsNone(jarmu_bovites(v)["ajto_nyitva"])
+
+    def test_a_bin_formabbol_a_hamis_es_negativ_ertek_is_megmarad(self):
+        v = pb.VehicleDescriptor()
+        v.Extensions[JARMU_BOVITES].door_open = False
+        v.Extensions[JARMU_BOVITES].stop_distance = -15
+        v.Extensions[JARMU_BOVITES].deviated = True
+        vissza = pb.VehicleDescriptor.FromString(v.SerializeToString())
+        self.assertEqual(jarmu_bovites(vissza), {"ajto_nyitva": False, "megallo_tavolsag": -15, "letert": True})
+
+    def test_betoltes_atadja_a_sebesseget_es_ajtojelet(self):
+        f = kis_feed("VehiclePositions")
+        v = f.entity[0].vehicle
+        v.position.speed = 12.5
+        v.vehicle.Extensions[JARMU_BOVITES].door_open = True
+        with patch.object(betolto, "beszur") as beszur:
+            betolto.megfigyeles_betolt(None, 1, 0, f.entity[0], "vehicle", 2, "0460", "vonal_a_feedben")
+        sor = beszur.call_args.args[2]
+        self.assertEqual(sor["sebesseg"], 12.5)
+        self.assertIs(sor["ajto_nyitva"], True)
+        self.assertIsNone(sor["letert"])
 
 
 class IdoProba(unittest.TestCase):

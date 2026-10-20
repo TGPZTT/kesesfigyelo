@@ -18,6 +18,7 @@ from google.protobuf.json_format import MessageToDict
 from google.transit import gtfs_realtime_pb2
 from psycopg.types.json import Jsonb
 
+from bkk_bovites import jarmu_bovites
 from gyujto import IDOJARAS_PONTOK, idojaras_adatok
 
 
@@ -316,23 +317,25 @@ def megfigyeles_betolt(conn, nyers_id, sorrend, elem, tipus, menetrend_id, vonal
             "lon": mezo(adat.position, "longitude"), "megallo_id": mezo(adat, "stop_id"),
             "megallo_sorrend": mezo(adat, "current_stop_sequence"),
             "jarmu_allapot": mezo(adat, "current_status"),
+            "sebesseg": mezo(adat.position, "speed"),
+            **jarmu_bovites(adat.vehicle),
         })
     beszur(conn, "megfigyeles", sor)
     if tipus == "trip_update":
         # Egy menetfrissítés több megállóhoz is adhat becsült időpontot.
         for i, megallo in enumerate(adat.stop_time_update):
-            beszur(conn, "megallo_frissites", {
+            sor = {
                 "nyers_id": nyers_id, "megfigyeles_sorrend": sorrend, "sorrend": i,
                 "megallo_id": mezo(megallo, "stop_id"),
                 "megallo_sorrend": mezo(megallo, "stop_sequence"),
                 "allapot": mezo(megallo, "schedule_relationship"),
-                "erkezes": idopont(mezo(megallo.arrival, "time")),
-                "indulas": idopont(mezo(megallo.departure, "time")),
-                "erkezes_keses": mezo(megallo.arrival, "delay"),
-                "indulas_keses": mezo(megallo.departure, "delay"),
-                "erkezes_bizonytalansag": mezo(megallo.arrival, "uncertainty"),
-                "indulas_bizonytalansag": mezo(megallo.departure, "uncertainty"),
-            })
+            }
+            # Az érkezés és az indulás ugyanazt a három GTFS-mezőt adhatja meg.
+            for mezonev, utotag in (("time", ""), ("delay", "_keses"), ("uncertainty", "_bizonytalansag")):
+                for magyar, esemeny in (("erkezes", megallo.arrival), ("indulas", megallo.departure)):
+                    ertek = mezo(esemeny, mezonev)
+                    sor[magyar + utotag] = idopont(ertek) if mezonev == "time" else ertek
+            beszur(conn, "megallo_frissites", sor)
 
 
 def rt_betolt(conn, nyers_id, payload, forras, jelolt=None):

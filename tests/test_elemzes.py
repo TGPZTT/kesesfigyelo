@@ -10,8 +10,8 @@ from statistics import median
 from psycopg.rows import dict_row
 
 import elemzes
-import test_betolto as betoltes_proba
 from betolto import menetrendi_ido
+from tests import test_betolto as betoltes_proba
 
 ALAP = int(datetime(2026, 10, 17, tzinfo=UTC).timestamp())
 

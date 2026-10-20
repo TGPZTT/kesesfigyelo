@@ -630,7 +630,7 @@ class GyujtoProba(unittest.TestCase):
         )
         eredmeny = subprocess.run(
             [sys.executable, "-c", kod],
-            cwd=Path(__file__).parent,
+            cwd=Path(__file__).resolve().parent.parent,
             capture_output=True,
             check=False,
             text=True,

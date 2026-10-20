@@ -88,7 +88,7 @@ Tesztek PostgreSQL-lel, külön ideiglenes táblacsoportban:
 
 ```powershell
 $env:TEST_DATABASE_CONFIG = ".env.db"
-uv run --locked python -m unittest -v test_gyujto test_betolto
+uv run --locked python -m unittest -v tests.test_gyujto tests.test_betolto
 $env:TEST_DATABASE_CONFIG = $null
 ```
 
@@ -135,7 +135,7 @@ Ilyen részleges mintából nem számol teljes órás követést.
 
 ```powershell
 uv run --locked python elemzes.py --nap 2026-10-17 --minta data/elemzes/minta.json.gz
-uv run --locked python -m unittest test_elemzes
+uv run --locked python -m unittest tests.test_elemzes
 ```
 
 Az adatbázisos elemzési próbákhoz ugyanaz a `TEST_DATABASE_CONFIG` kell, mint a betöltő tesztjeihez.
@@ -217,7 +217,10 @@ Többnapos kihagyás után a köztes napok a fenti `--nap` kapcsolóval tölthet
 Az új számítás és átadás próbái:
 
 ```powershell
-uv run --locked --extra web python -m unittest test_elemzes test_napi test_app
+uv run --locked --extra web python -m unittest tests.test_elemzes tests.test_napi tests.test_app
 ```
+
+Az automatizált tesztek a `tests/` mappában vannak. Az összes futtatása a repó főmappájából
+`uv run --locked --extra web python -m unittest discover -v` paranccsal történik.
 
 Adatok forrása: BKK Zrt., CC BY 4.0. Időjárás: [Open-Meteo](https://open-meteo.com/), CC BY 4.0; az ingyenes API nem üzleti használatra való.

@@ -17,7 +17,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import napi
-from test_elemzes import kis_menet
+from tests.test_elemzes import kis_menet
 
 NAP = date(2026, 10, 19)
 MOST = datetime(2026, 10, 20, 6, tzinfo=UTC)

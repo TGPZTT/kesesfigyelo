@@ -545,6 +545,32 @@ class WebTeszt(unittest.TestCase):
         oldal.sidebar.radio(key="idoszak_mod").set_value("Napok kiválasztása").run()
         self.assertEqual(oldal.sidebar.multiselect[0].value, ["2026-10-19"])
 
+    def test_jeloles_elotti_mentes_nem_hibas_es_nem_duplazza_az_uj_napot(self):
+        regi = minta("2026-10-19", 90)
+        for kulcs in ("modszer", "forras_csoport", "ido_jelentese", "idokeret_jelentese",
+                      "pontossagi_rangsor", "hivatalos_pontossaggal_osszevetheto"):
+            regi.pop(kulcs)
+        regi.update(napi_sema=1, menetrend_id=1)
+        self.ment("regi", regi)
+        self.ment("uj", minta("2026-10-19", 40))
+        oldal = self.megjelenit()
+        self.rendben(oldal)
+        self.assertEqual(self.darab(oldal), "40")
+        self.assertFalse(oldal.warning)
+        self.assertNotIn("újraszámolásig", self.szoveg(oldal))
+
+    def test_uj_hianyos_es_ismeretlen_modszeru_mentes_tovabbra_is_hibat_jelez(self):
+        self.ment("jo", minta("2026-10-19", 40))
+        hibas = minta("2026-10-18")
+        hibas.pop("modszer")
+        hibas.update(napi_sema=1, menetrend_id=1)
+        self.ment("hianyos", hibas)
+        self.ment("ismeretlen", dict(minta("2026-10-18"), modszer="ismeretlen-1"))
+        oldal = self.megjelenit()
+        self.rendben(oldal)
+        self.assertEqual(self.darab(oldal), "40")
+        self.assertEqual(len(oldal.warning), 2)
+
     def test_uj_rangsor_a_kozolt_idot_hasznalja(self):
         adat = minta("2026-10-19")
         adat["vonalak"][0].update(keses_eloszlas=[[0, 20], [90, 60]], idokeretek=[[-120, 120, 80]])

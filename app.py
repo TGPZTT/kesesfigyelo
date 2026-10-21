@@ -1161,7 +1161,16 @@ def idojaras_erzekenyseg(sorok, mezo):
 
 
 def regi_modszer(adat):
-    return isinstance(adat, dict) and adat.get("modszer") == "helyzet-idokeret-1"
+    if not isinstance(adat, dict):
+        return False
+    if adat.get("modszer") == "helyzet-idokeret-1":
+        return True
+    # A legkorábbi napi exportokban még nem volt módszerjelölés.
+    # Az új időértelmezést tartalmazó, hibás mentés továbbra is figyelmeztetést kap.
+    return ("modszer" not in adat and adat.get("napi_sema") == 1
+            and {"nap", "keszult_utc", "menetrend_id", "vonalak"} <= adat.keys()
+            and isinstance(adat["vonalak"], list)
+            and not any(k in adat for k in ("forras_csoport", "ido_jelentese", "idokeret_jelentese")))
 
 
 def buszos_osszesites(sorok):

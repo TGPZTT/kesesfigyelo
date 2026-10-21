@@ -16,8 +16,100 @@ from psycopg.rows import dict_row
 
 from betolto import kapcsolat, menetrendi_ido
 
-MODSZER = "kozles-haladas-ajto-1"
-HEV_MODSZER = "hev-kozles-kontroll-1"
+MODSZER = "kozles-haladas-ajto-4"
+HEV_MODSZER = "hev-kozles-kontroll-4"
+
+
+def menetrendi_kozlesek(sorok):
+    """A terv változásai a beérkezés sorrendjében, a hiány visszatérésével együtt."""
+    elozo, eredmeny = {}, []
+    sorok = [s for s in sorok if type(s.get("feed_ido")) in (int, float) and math.isfinite(s["feed_ido"])]
+    for s in sorted(sorok, key=kozles_sorrend):
+        sorrend = s.get("sorrend")
+        alairas = tuple(s.get(k) for k in ("megallo_id", "forras_tervezett_erkezes",
+                                         "forras_tervezett_indulas", "menet_allapot"))
+        if sorrend not in elozo or elozo[sorrend] != alairas:
+            eredmeny.append({k: s.get(k) for k in ("sorrend", "megallo_id", "feed_ido", "adat_ido",
+                                                 "forras_tervezett_erkezes", "forras_tervezett_indulas",
+                                                 "menet_allapot")})
+            elozo[sorrend] = alairas
+    return eredmeny
+
+
+def menetrendi_alap(menet):
+    """A GTFS a fő alap; az előzetes BKK-terv külön diagnosztika."""
+    if menet.get("menetrend_feloldva") == MODSZER:
+        return menet
+    # A régi, már feloldott bemenet BKK-tervét sem engedjük vissza a fő alapba.
+    megallok = sorted((dict(s, tervezett=s.get("gtfs_tervezett", s["tervezett"]),
+                            tervezett_erkezes=s.get("gtfs_tervezett_erkezes", s.get("tervezett_erkezes")))
+                       for s in menet["megallok"]), key=lambda s: s["sorrend"])
+    if not megallok:
+        return dict(menet, menetrend_feloldva=MODSZER)
+    mozgas_kezdetek = []
+    # A legelső követhető mozgásnál már korábban is úton lehetett a jármű.
+    # Az ennél későbbi tervet ezért nem visszük vissza a teljes út elejére.
+    for pontok in helyzetek(menet, monoton=False).values():
+        for a, b in pairwise(pontok):
+            if pontpar_jo(a, b) and tavolsag(a, b) >= 30:
+                mozgas_kezdetek.append(a["adat_ido"])
+                break
+    hatar = min(mozgas_kezdetek, default=megallok[0]["tervezett"])
+    # Ritkított közlésből nem található ki, mikor jelent meg először a terv.
+    tortenet = [s for s in (menet.get("menetrendi_kozlesek") or [])
+                if type(s.get("feed_ido")) in (int, float) and math.isfinite(s["feed_ido"])]
+    terv, ellentmond = {}, set()
+    for s in sorted(tortenet, key=kozles_sorrend):
+        if s.get("feed_ido") is None:
+            continue
+        i = s["sorrend"]
+        if s["feed_ido"] <= hatar:
+            elozo = terv.get(i)
+            mezok = ("megallo_id", "forras_tervezett_erkezes", "forras_tervezett_indulas", "menet_allapot")
+            if elozo and elozo["feed_ido"] == s["feed_ido"] and any(elozo.get(k) != s.get(k) for k in mezok):
+                ellentmond.add(i)
+            elif elozo and elozo["feed_ido"] < s["feed_ido"]:
+                ellentmond.discard(i)
+            terv[i] = s
+    kesobb_valtozo = {s["sorrend"] for s in tortenet if s.get("feed_ido", 0) > hatar
+                     and s.get("forras_tervezett_indulas") != terv.get(s["sorrend"], {}).get("forras_tervezett_indulas")}
+    allapot = "nincs_eloterv" if "menetrendi_kozlesek" in menet else "nincs_tervtortenet"
+    hasznal = False
+    van = any(s.get("forras_tervezett_indulas") is not None for s in terv.values())
+    if van and not hev_vonal(menet["vonal_id"]):
+        teljes = all(s["sorrend"] in terv and terv[s["sorrend"]].get("forras_tervezett_indulas") is not None
+                     for s in megallok)
+        allapot = "reszleges_eloterv"
+        if teljes:
+            elozmeny = None
+            hasznal = not ellentmond
+            for s in megallok:
+                t = terv[s["sorrend"]]
+                de = t["forras_tervezett_indulas"]
+                ar = t.get("forras_tervezett_erkezes")
+                hasznal &= (t.get("megallo_id") == s["megallo_id"] and (t.get("menet_allapot") or 0) == 0
+                            and (ar is None or ar <= de)
+                            and (elozmeny is None or elozmeny <= (ar if ar is not None else de)))
+                elozmeny = de
+            allapot = "bkk_eloterve" if hasznal else "hibas_eloterv"
+            if hasznal and all(terv[s["sorrend"]]["forras_tervezett_indulas"] == s["tervezett"] for s in megallok):
+                allapot = "bkk_egyezik"
+    if hev_vonal(menet["vonal_id"]):
+        allapot = "hev_gtfs"
+    uj = []
+    for s in megallok:
+        t = terv.get(s["sorrend"], {})
+        de = t.get("forras_tervezett_indulas")
+        ar = t.get("forras_tervezett_erkezes")
+        # A korábban közölt terv sem bizonyítja a kihirdetett menetrend módosítását.
+        uj.append(dict(s, gtfs_tervezett=s["tervezett"], gtfs_tervezett_erkezes=s.get("tervezett_erkezes"),
+                       menetrendi_forras="gtfs", bkk_terv_ellenorzott=hasznal,
+                       bkk_tervezett_indulas=de if hasznal else None,
+                       bkk_tervezett_erkezes=ar if hasznal else None,
+                       terv_allapot=allapot, terv_hatar=hatar, terv_feed=t.get("feed_ido"),
+                       forras_tervezett_indulas=de, forras_tervezett_erkezes=ar,
+                       terv_kesobb_valtozott=s["sorrend"] in kesobb_valtozo))
+    return dict(menet, megallok=uj, menetrend_feloldva=MODSZER)
 
 
 def helyzetek(menet, monoton=True):
@@ -61,8 +153,17 @@ def kozles_sorrend(sor):
 
 
 def ertekelheto(sor):
-    """Megvan az indulás, és a menetrendhez is hozzárendelhető."""
+    """Ellenőrzött idő, a kapott azonosító szerinti tervvel. Nem független igazolás."""
     return sor["indulas"] is not None and sor["menetrend_ok"]
+
+
+def terv_osszegzes(sorok):
+    """A mozgás ellenőrzése és a menetrendi alap külön marad az exportban."""
+    return {"bkk_terv_db": sum(s.get("bkk_terv_ellenorzott", False) for s in sorok),
+            "eltero_terv_db": sum(s.get("bkk_terv_ellenorzott", False)
+                                  and s["bkk_tervezett_indulas"] != s["tervezett"] for s in sorok),
+            "utolagos_terv_db": sum(s.get("terv_kesobb_valtozott", False) for s in sorok),
+            "nagy_elteres_db": sum(abs(s["keses_mp"]) >= 1800 for s in sorok)}
 
 
 def fennallo_torles(kozlesek):
@@ -160,8 +261,42 @@ def tovabbhaladas(pontok, megallo, ido):
     return (a["adat_ido"], b["adat_ido"]), None
 
 
+def vegighaladas_hatarok(menet, pontok):
+    """Visszatérés egy már bejárt szakaszra, két-két továbbhaladással jelezve."""
+    megallok = {s["sorrend"]: s for s in menet["megallok"]
+                if all(type(s.get(k)) in (int, float) and math.isfinite(s[k]) for k in ("lat", "lon"))}
+    sorozatok, sorozat = [], []
+    for a, b in pairwise(pontok):
+        megallo = megallok.get(a.get("sorrend"))
+        if not (megallo and pontpar_jo(a, b) and b["sorrend"] > a["sorrend"]
+                and tavolsag(a, megallo) <= 100 and tavolsag(b, megallo) >= 40
+                and tavolsag(a, b) >= 30):
+            continue
+        jel = (a["sorrend"], a["adat_ido"], b["adat_ido"])
+        if sorozat and jel[0] <= sorozat[-1][0]:
+            # Egy közeli sorszámjavítás még nem másik végighaladás.
+            if jel[1] - sorozat[-1][2] <= 120:
+                continue
+            sorozatok.append(sorozat)
+            sorozat = []
+        sorozat.append(jel)
+    sorozatok.append(sorozat)
+    kovethetok = [s for s in sorozatok if len(s) >= 2]
+    hatarok = []
+    for elozo, uj in pairwise(kovethetok):
+        if uj[0][0] <= elozo[-1][0]:
+            # Az új sorozat első indulása előtt már érkezhetett közeli helyzet.
+            kezdet = min((p["adat_ido"] for p in pontok
+                          if elozo[-1][2] < p["adat_ido"] <= uj[0][1] and p["jo"]
+                          and p["sorrend"] <= uj[0][0] and p["sorrend"] in megallok
+                          and tavolsag(p, megallok[p["sorrend"]]) <= 100), default=uj[0][1])
+            hatarok.append(kezdet)
+    return hatarok
+
+
 def ellenorzott_indulasok(menet, vegallomas=False):
     """Utólagos közlés, mozgással ellenőrizve. A HÉV külön forráscsoport."""
+    menet = menetrendi_alap(menet)
     hev = hev_vonal(menet["vonal_id"])
     pontok = helyzetek(menet, monoton=False)
     vp_azonositok = {p.get("jarmu_id") for p in menet["poziciok"] if p.get("jarmu_id")}
@@ -170,7 +305,7 @@ def ellenorzott_indulasok(menet, vegallomas=False):
     frissitesek = defaultdict(list)
     for s in menet["kozlesek"]:
         frissitesek[s.get("sorrend")].append(s)
-    torles = fennallo_torles(menet["kozlesek"])
+    torles = menet["torles_ido"] if "torles_ido" in menet else fennallo_torles(menet["kozlesek"])
     eredmeny = mozgasbol_indulasok(menet, vegallomas)
     for s in eredmeny:
         s.update(mozgasos_indulas=s["indulas"], mozgas_also=s["also"], mozgas_felso=s["felso"],
@@ -223,6 +358,7 @@ def ellenorzott_indulasok(menet, vegallomas=False):
         s.update(indulas=ido, keses_mp=ido - s["tervezett"], also=keret[0], felso=keret[1],
                  jarmu_id=jarmu, jarmu_menetbol=jelolt.get("jarmu_id") is None, menetrend_ok=True,
                  minoseg="hev_kozles" if hev else "ajtojel" if nyitott else "kovetett")
+        s["keses_gtfs_mp"] = ido - s["gtfs_tervezett"]
         if s["mozgas_also"] is not None:
             s["tu_egyezes"] = s["mozgas_also"] <= ido <= s["mozgas_felso"]
     # A közölt idők sem fordíthatják meg ugyanannak a járműnek a megállósorrendjét.
@@ -232,6 +368,20 @@ def ellenorzott_indulasok(menet, vegallomas=False):
         if id(s) in hibas:
             s.update(indulas=None, keses_mp=None, minoseg="bizonytalan", elutasitas="forditott_idorend")
             s["ok"].append("forditott_idorend")
+    # Külön végighaladások részleteiből nem készülhet egyetlen összerakott út.
+    # A késés nagyságától független ellenőrzés. A hosszú, helyben várakozó
+    # járművet nem zárja ki, és a megállás nélküli továbbhaladás is számít.
+    jok = [s for s in eredmeny if s["indulas"] is not None]
+    hatarok = vegighaladas_hatarok(menet, pontok[jarmu]) if jarmu and jok else []
+    if jok and any(min(s["also"] for s in jok) < t <= max(s["also"] for s in jok) for t in hatarok):
+        for s in eredmeny:
+            s.update(indulas=None, keses_mp=None, also=None, felso=None, erkezes=None,
+                     erkezes_also=None, erkezes_felso=None, tu_egyezes=None,
+                     minoseg="bizonytalan", elutasitas="kevert_vegighaladas")
+            s["ok"].append("kevert_vegighaladas")
+    for s in eredmeny:
+        s["keses_bkk_terv_mp"] = (s["indulas"] - s["bkk_tervezett_indulas"]
+                                 if s["indulas"] is not None and s["bkk_terv_ellenorzott"] else None)
     return eredmeny
 
 
@@ -371,6 +521,10 @@ def kozles_ideje(sor):
 
 def kozlesek_ritkitasa(sorok):
     # Egy változatlan közlés sokszori letöltése nem sok külön bizonyíték.
+    # Törlésnél a teljes válaszcsoport és az első megjelenés ideje is számít.
+    # Ezeket az utakat nem ritkítjuk, így a visszaállítás sem válhat látszólagossá.
+    if any(s.get("menet_allapot") == 3 for s in sorok):
+        return sorted(sorok, key=kozles_sorrend)
     egyedi = {}
     for sor in sorok:
         # Azonos saját időhöz tartozó eltérő tartalmat is megtartunk.
@@ -572,7 +726,8 @@ def ismetlesek(esemenyek):
                  and b["indulas"] - a["indulas"] <= 120]
         for par in parok:
             for s in par:
-                s.update(minoseg="bizonytalan", indulas=None, keses_mp=None, menetrend_ok=False)
+                s.update(minoseg="bizonytalan", indulas=None, keses_mp=None,
+                         keses_bkk_terv_mp=None, menetrend_ok=False)
                 s["ok"].append("Ugyanaz a jármű két közeli indulásként szerepel.")
 
 
@@ -907,13 +1062,56 @@ def adatbazisbol(conn, nap, vonalak, menetrend_id, menet_azonositok=None):
                    extract(epoch FROM u.feed_ido)::bigint feed_ido,
                    extract(epoch FROM s.indulas)::bigint indulas,
                    extract(epoch FROM s.erkezes)::bigint erkezes,
+                   extract(epoch FROM s.forras_tervezett_indulas)::bigint forras_tervezett_indulas,
+                   extract(epoch FROM s.forras_tervezett_erkezes)::bigint forras_tervezett_erkezes,
                    s.indulas_bizonytalansag bizonytalansag,s.erkezes_bizonytalansag,
                    coalesce(s.allapot,0) allapot,coalesce(u.menet_allapot,0) menet_allapot
             FROM u LEFT JOIN megallo_frissites s ON s.nyers_id=u.nyers_id AND s.megfigyeles_sorrend=u.sorrend
             ORDER BY u.adat_ido,u.feed_ido
             """, param).fetchall()
+        menet["menetrendi_kozlesek"] = menetrendi_kozlesek(sorok)
         menet["kozlesek"] = kozlesek_ritkitasa(sorok)
         yield menet
+
+
+def keses_reszletek(esemenyek, nap):
+    """Kis kiegészítés az órás ábrákhoz és a legnagyobb késés visszakereséséhez."""
+    napi = [s for s in esemenyek if kezdet_napon(s["tervezett"], nap) and ertekelheto(s)]
+    orak, iranyok = defaultdict(list), defaultdict(list)
+    for sor in napi:
+        ora = datetime.fromtimestamp(sor["tervezett"], ZoneInfo("Europe/Budapest")).hour
+        orak[(sor["vonal_id"], sor["irany"], ora)].append(sor)
+        iranyok[(sor["vonal_id"], sor["irany"])].append(sor)
+
+    def legkesobbi(sorok):
+        # Azonos maximum esetén az első menetrendi időpont adja a bemutatott példát.
+        return min(sorok, key=lambda s: (-s["keses_mp"], s["tervezett"], s["menet_id"], s["sorrend"]))
+
+    def pont(sor):
+        return {k: sor[k] for k in ("menet_id", "szolgalati_nap", "vonal_id", "irany", "sorrend",
+                                    "megallo_id", "tervezett", "indulas", "keses_mp")}
+
+    oras = []
+    for (vonal, irany, ora), sorok in sorted(orak.items()):
+        maximum = legkesobbi(sorok)
+        oras.append({"vonal_id": vonal, "irany": irany, "ora": ora,
+                     "menet_db": len({(s["menet_id"], s["szolgalati_nap"]) for s in sorok}),
+                     "maximum": pont(maximum),
+                     "maximum_db": sum(s["keses_mp"] == maximum["keses_mp"] for s in sorok)})
+    peldak = []
+    for (vonal, irany), sorok in sorted(iranyok.items()):
+        maximum = legkesobbi(sorok)
+        if maximum["keses_mp"] <= 0:
+            continue
+        kulcs = (maximum["menet_id"], maximum["szolgalati_nap"], vonal, irany)
+        ut = sorted((s for s in esemenyek if
+                     (s["menet_id"], s["szolgalati_nap"], s["vonal_id"], s["irany"]) == kulcs),
+                    key=lambda s: s["sorrend"])
+        # A hiányzó vagy elutasított közlés lyuk marad a vonalban.
+        megallok = [dict(pont(s), indulas=s["indulas"] if ertekelheto(s) else None,
+                         keses_mp=s["keses_mp"] if ertekelheto(s) else None) for s in ut]
+        peldak.append({"vonal_id": vonal, "irany": irany, "maximum": pont(maximum), "megallok": megallok})
+    return {"orankent": oras, "szelso_utak": peldak}
 
 
 def osszegzes(esemenyek, nap):
@@ -941,14 +1139,17 @@ def osszegzes(esemenyek, nap):
                         "koran_erkezett": len(koran_erkezett),
                         "megvarta_indulast": sum((s["also"] if s.get("also") is not None else s["indulas"]) >= s["tervezett"]
                                                 for s in koran_erkezett),
+                        **terv_osszegzes(jok),
                         **intervallum_osszegzes(sorok)})
     orak, szakaszok = defaultdict(list), defaultdict(list)
+    ora_tervek = defaultdict(Counter)
     tervezett_orak, tervezett_parok = Counter(), Counter()
     for s in napi:
         ora = datetime.fromtimestamp(s["tervezett"], ZoneInfo("Europe/Budapest")).hour
         tervezett_orak[(s["vonal_id"], s["irany"], ora)] += 1
         if ertekelheto(s):
             orak[(s["vonal_id"], s["irany"], ora)].append(s["keses_mp"])
+            ora_tervek[(s["vonal_id"], s["irany"], ora)].update(terv_osszegzes([s]))
     menetek = defaultdict(list)
     for s in esemenyek:
         menetek[(s["menet_id"], s["szolgalati_nap"])].append(s)
@@ -968,6 +1169,7 @@ def osszegzes(esemenyek, nap):
             "orankent": [{"vonal_id": k[0], "irany": k[1], "ora": k[2], "n": len(v),
                           "tervezett": tervezett_orak[k], "lefedettseg": len(v) / tervezett_orak[k],
                           "median_keses_mp": median(v) if v else None, "korai_indulas": sum(t < 0 for t in v),
+                          **dict(ora_tervek[k]),
                           "keses_eloszlas": eloszlas(v)}
                          for k in sorted(tervezett_orak) for v in [orak[k]]],
             "szakaszok": [{"vonal_id": k[0], "irany": k[1], "honnan": k[2], "hova": k[3],
@@ -1237,6 +1439,7 @@ def menetrendi_iranyok(menetek, nap):
 
 def feldolgozas(adatok, nap):
     # Ugyanaz a számítás fut a kézi és a napi exportnál.
+    adatok = dict(adatok, menetek=[menetrendi_alap(m) for m in adatok["menetek"]])
     forrasok = {hev_vonal(m["vonal_id"]) for m in adatok["menetek"]}
     if len(forrasok) > 1:
         raise ValueError("A HÉV külön feldolgozást igényel.")
@@ -1244,6 +1447,7 @@ def feldolgozas(adatok, nap):
     esemenyek = [s for menet in adatok["menetek"] for s in ellenorzott_indulasok(menet)]
     ismetlesek(esemenyek)
     eredmeny = osszegzes(esemenyek, nap)
+    eredmeny["keses_reszletek"] = keses_reszletek(esemenyek, nap)
     eredmeny["modszer"] = HEV_MODSZER if hev else MODSZER
     eredmeny["ido_jelentese"] = "utolagos_kozles_mozgassal_ellenorizve"
     eredmeny["idokeret_jelentese"] = "mozgasos_ellenorzes_nem_pontossagi_hatar"
@@ -1255,6 +1459,14 @@ def feldolgozas(adatok, nap):
     ismetlesek(regi)
     eredmeny["korabbi_modszer"] = osszegzes(regi, nap)["vonalak"]
     eredmeny["ellenorzes"] = {
+        "menetrendi_alap": dict(Counter(s["terv_allapot"] for s in esemenyek
+                                        if s["indulas"] is not None and kezdet_napon(s["tervezett"], nap))),
+        "modositott_terv": sum(s["bkk_terv_ellenorzott"] and s["bkk_tervezett_indulas"] != s["tervezett"] for s in esemenyek
+                              if s["indulas"] is not None and kezdet_napon(s["tervezett"], nap)),
+        "utolagos_tervvaltas": sum(s["terv_kesobb_valtozott"] for s in esemenyek
+                                  if s["indulas"] is not None and kezdet_napon(s["tervezett"], nap)),
+        "legalabb_felora_elteres": sum(abs(s["keses_mp"]) >= 1800 for s in esemenyek
+                                      if ertekelheto(s) and kezdet_napon(s["tervezett"], nap)),
         "elutasitasok": dict(Counter(s["elutasitas"] for s in esemenyek
                                      if s["elutasitas"] and kezdet_napon(s["tervezett"], nap))),
         "ajtovizsgalat": dict(Counter(s["ajto_ellenorzes"] for s in esemenyek

@@ -18,7 +18,7 @@ from google.protobuf.json_format import MessageToDict
 from google.transit import gtfs_realtime_pb2
 from psycopg.types.json import Jsonb
 
-from bkk_bovites import jarmu_bovites
+from bkk_bovites import jarmu_bovites, megallo_bovites
 from gyujto import IDOJARAS_PONTOK, idojaras_adatok
 
 
@@ -335,6 +335,7 @@ def megfigyeles_betolt(conn, nyers_id, sorrend, elem, tipus, menetrend_id, vonal
                 for magyar, esemeny in (("erkezes", megallo.arrival), ("indulas", megallo.departure)):
                     ertek = mezo(esemeny, mezonev)
                     sor[magyar + utotag] = idopont(ertek) if mezonev == "time" else ertek
+            sor.update({nev: idopont(ido) for nev, ido in megallo_bovites(megallo).items()})
             beszur(conn, "megallo_frissites", sor)
 
 

@@ -6,6 +6,7 @@ import unittest
 from collections import Counter
 from datetime import UTC, date, datetime
 from statistics import median
+from zoneinfo import ZoneInfo
 
 from psycopg.rows import dict_row
 
@@ -61,9 +62,327 @@ def elso(menet):
     return elemzes.indulasok(menet)[0]
 
 
+class MenetrendiAlapProba(unittest.TestCase):
+    def minta(self, elteres=-3600, feed=-60):
+        m = kis_menet()
+        m["menetrendi_kozlesek"] = [
+            {"sorrend": s["sorrend"], "megallo_id": s["megallo_id"], "feed_ido": ALAP + feed,
+             "adat_ido": None, "menet_allapot": 0,
+             "forras_tervezett_erkezes": s["tervezett_erkezes"] + elteres,
+             "forras_tervezett_indulas": s["tervezett"] + elteres}
+            for s in m["megallok"]]
+        return m
+
+    def kesleltetett_minta(self, gtfs_kezdet):
+        m = self.minta(300)
+        eltol = int(gtfs_kezdet.timestamp()) - ALAP
+        for s in m["megallok"]:
+            for k in ("tervezett", "tervezett_erkezes"):
+                s[k] += eltol
+        for s in m["menetrendi_kozlesek"]:
+            for k in ("feed_ido", "forras_tervezett_indulas", "forras_tervezett_erkezes"):
+                s[k] += eltol
+        for s in m["kozlesek"]:
+            for k in ("feed_ido", "adat_ido", "indulas", "erkezes"):
+                s[k] += eltol + 570
+        for p in m["poziciok"]:
+            p["adat_ido"] += eltol + 570
+        return m
+
+    def test_hat_oras_gtfs_ot_perccel_kesobbi_bkk_es_tiz_perccel_kesobbi_indulas(self):
+        kezdet = datetime(2026, 10, 17, 6, tzinfo=ZoneInfo("Europe/Budapest"))
+        a = elemzes.ellenorzott_indulasok(self.kesleltetett_minta(kezdet))[0]
+        self.assertEqual(a["tervezett"], kezdet.timestamp())  # 06:00
+        self.assertEqual(a["bkk_tervezett_indulas"], kezdet.timestamp() + 300)  # 06:05
+        self.assertEqual(a["indulas"], kezdet.timestamp() + 600)  # 06:10
+        self.assertEqual(a["keses_mp"], 600)
+        self.assertEqual(a["keses_gtfs_mp"], 600)
+        self.assertEqual(a["keses_bkk_terv_mp"], 300)
+
+    def test_regi_feloldott_bkk_alap_sem_kerulhet_vissza_es_a_feloldas_idempotens(self):
+        m = self.minta(300)
+        m["menetrend_feloldva"] = True
+        for s in m["megallok"]:
+            s.update(gtfs_tervezett=s["tervezett"], gtfs_tervezett_erkezes=s["tervezett_erkezes"],
+                     tervezett=s["tervezett"] + 300, tervezett_erkezes=None,
+                     menetrendi_forras="bkk_eloterve")
+        eredeti = copy.deepcopy(m)
+        uj = elemzes.menetrendi_alap(m)
+        self.assertEqual(uj["megallok"][0]["tervezett"], ALAP)
+        self.assertEqual(uj["megallok"][0]["tervezett_erkezes"], ALAP)
+        self.assertEqual(uj["megallok"][0]["bkk_tervezett_indulas"], ALAP + 300)
+        self.assertEqual(elemzes.menetrendi_alap(uj), uj)
+        self.assertEqual(elemzes.ellenorzott_indulasok(m)[0]["keses_mp"], 30)
+        self.assertEqual(m, eredeti)
+
+    def test_ejfelkor_a_gtfs_nap_es_ora_szamit_a_kontrollban_is(self):
+        kezdet = datetime(2026, 10, 17, 23, 59, tzinfo=ZoneInfo("Europe/Budapest"))
+        m = self.kesleltetett_minta(kezdet)
+        regi_nap = elemzes.feldolgozas({"menetek": [m]}, date(2026, 10, 17))
+        uj_nap = elemzes.feldolgozas({"menetek": [m]}, date(2026, 10, 18))
+        for er, ora in ((regi_nap, 23), (uj_nap, 0)):
+            self.assertEqual(er["vonalak"][0]["tervezett"], 1)
+            self.assertEqual(er["vonalak"][0]["keseshez_hasznalt"], 1)
+            self.assertEqual(er["orankent"][0]["ora"], ora)
+            self.assertEqual(er["kontroll"]["orankent"][0]["ora"], ora)
+        self.assertEqual(regi_nap["vonalak"][0]["median_keses_mp"], 600)
+        self.assertEqual(regi_nap["kontroll"]["vonalak"][0]["median_keses_mp"], 600)
+
+    def test_napi_szakasz_varakozas_es_kontroll_gtfs_alapu_a_diagnosztika_megmarad(self):
+        m = self.minta(300)
+        for i, s in enumerate(m["menetrendi_kozlesek"]):
+            s["forras_tervezett_indulas"] += i * 60
+            s["forras_tervezett_erkezes"] += i * 60
+        er = elemzes.feldolgozas({"menetek": [m]}, date(2026, 10, 17))
+        alap = elemzes.feldolgozas({"menetek": [kis_menet()]}, date(2026, 10, 17))
+        self.assertEqual(er["modszer"], "kozles-haladas-ajto-4")
+        self.assertEqual(er["vonalak"][0]["median_keses_mp"], 27.5)
+        self.assertEqual(er["szakaszok"][0]["median_valtozas_mp"], -5)
+        self.assertEqual(er["kontroll"]["szakaszok"], alap["kontroll"]["szakaszok"])
+        self.assertEqual(er["vonalak"][0]["bkk_terv_db"], 2)
+        self.assertEqual(er["vonalak"][0]["eltero_terv_db"], 2)
+        self.assertEqual(er["ellenorzes"]["modositott_terv"], 2)
+        self.assertEqual(elemzes.kovetesi_reszek(er["esemenyek"], date(2026, 10, 17)),
+                         elemzes.kovetesi_reszek(alap["esemenyek"], date(2026, 10, 17)))
+
+    def test_elutasitott_es_duplan_hozzarendelt_indulashoz_nincs_bkk_elteres(self):
+        m = self.minta(300)
+        m["poziciok"].append(pont(36, 1, ajto_nyitva=True))
+        a = elemzes.ellenorzott_indulasok(m)[0]
+        self.assertTrue(a["bkk_terv_ellenorzott"])
+        self.assertIsNone(a["indulas"])
+        self.assertIsNone(a["keses_bkk_terv_mp"])
+        sorok = elemzes.ellenorzott_indulasok(self.minta(300))
+        masik = copy.deepcopy(sorok)
+        for s in masik:
+            s["menet_id"] = "T2"
+        elemzes.ismetlesek(sorok + masik)
+        self.assertTrue(all(s["indulas"] is None and s["keses_bkk_terv_mp"] is None for s in sorok + masik))
+
+    def test_a_tervezett_varakozas_nem_az_eltero_bkk_tervekbol_keszul(self):
+        sorok = []
+        for i, elteres in enumerate((300, 420, 660)):
+            m = self.minta(elteres)
+            m["menet_id"] = "T" + str(i)
+            for csoport, mezok in (("megallok", ("tervezett", "tervezett_erkezes")),
+                                   ("menetrendi_kozlesek", ("feed_ido", "forras_tervezett_indulas", "forras_tervezett_erkezes")),
+                                   ("kozlesek", ("feed_ido", "adat_ido", "indulas", "erkezes")),
+                                   ("poziciok", ("adat_ido",))):
+                for s in m[csoport]:
+                    for k in mezok:
+                        s[k] += i * 600
+            sorok.append(elemzes.ellenorzott_indulasok(m)[0])
+        er = elemzes.kovetes(sorok, ALAP + 100, ALAP + 1000, szegely=0)
+        self.assertTrue(er["hasznalhato"])
+        self.assertAlmostEqual(er["tervezett_varakozas_mp"], 285000 / 900)
+        self.assertAlmostEqual(er["tobblet_mp"], 10)
+
+    def test_kulon_menetrend_nem_mozditja_el_a_megfigyelt_idot(self):
+        for mp in (-3600, 3600, 0):
+            with self.subTest(elteres=mp):
+                m = self.minta(mp)
+                eredeti = copy.deepcopy(m)
+                regi = elemzes.ellenorzott_indulasok(kis_menet())
+                uj = elemzes.ellenorzott_indulasok(m)
+                fizikai_mezok = ("indulas", "erkezes", "also", "felso", "erkezes_also", "erkezes_felso",
+                                 "jarmu_id", "jarmu_menetbol", "minoseg", "elutasitas", "esemeny_tipus",
+                                 "ajto_ellenorzes", "tu_egyezes", "mozgasos_indulas", "mozgas_also", "mozgas_felso")
+                self.assertEqual([[s.get(k) for k in fizikai_mezok] for s in regi],
+                                 [[s.get(k) for k in fizikai_mezok] for s in uj])
+                self.assertEqual(uj[0]["tervezett"], ALAP)
+                self.assertEqual(uj[0]["gtfs_tervezett"], ALAP)
+                self.assertEqual(uj[0]["keses_mp"], 30)
+                self.assertEqual(uj[0]["keses_gtfs_mp"], 30)
+                self.assertEqual(uj[0]["keses_bkk_terv_mp"], 30 - mp)
+                self.assertEqual(uj[0]["bkk_tervezett_indulas"], ALAP + mp)
+                self.assertTrue(uj[0]["bkk_terv_ellenorzott"])
+                self.assertEqual(uj[0]["menetrendi_forras"], "gtfs")
+                osszeg = elemzes.terv_osszegzes(uj)
+                self.assertEqual(osszeg["bkk_terv_db"], 2)
+                self.assertEqual(osszeg["eltero_terv_db"], 2 if mp else 0)
+                self.assertEqual(m, eredeti)
+
+    def test_utolagos_terv_nem_irja_at_a_multat(self):
+        m = self.minta(feed=80)
+        a = elemzes.ellenorzott_indulasok(m)[0]
+        self.assertEqual(a["tervezett"], ALAP)
+        self.assertEqual(a["terv_allapot"], "nincs_eloterv")
+        self.assertTrue(a["terv_kesobb_valtozott"])
+        self.assertFalse(a["bkk_terv_ellenorzott"])
+        self.assertIsNone(a["keses_bkk_terv_mp"])
+
+    def test_a_korabbi_es_kesobbi_terv_azonos_szabalyt_kap(self):
+        for mp in (-3600, 3600):
+            m = self.minta(mp, mp - 60)
+            for p in m["poziciok"]:
+                p["adat_ido"] += mp
+            for s in m["kozlesek"]:
+                for k in ("feed_ido", "adat_ido", "indulas", "erkezes"):
+                    s[k] += mp
+            a = elemzes.ellenorzott_indulasok(m)[0]
+            self.assertEqual(a["tervezett"], ALAP)
+            self.assertEqual(a["keses_mp"], 30 + mp)
+            self.assertEqual(a["keses_bkk_terv_mp"], 30)
+
+    def test_a_terv_valtozasa_es_visszaterese_is_megmarad(self):
+        m = self.minta()
+        mas = self.minta(-1800, -40)["menetrendi_kozlesek"]
+        vissza = self.minta(-3600, -20)["menetrendi_kozlesek"]
+        tortenet = elemzes.menetrendi_kozlesek(m["menetrendi_kozlesek"] + mas + vissza)
+        self.assertEqual(len(tortenet), 9)
+        m["menetrendi_kozlesek"] = tortenet
+        a = elemzes.menetrendi_alap(m)["megallok"][0]
+        self.assertEqual(a["tervezett"], ALAP)
+        self.assertEqual(a["bkk_tervezett_indulas"], ALAP - 3600)
+
+    def test_hiany_reszleges_hibas_es_ellentmondo_terv_nem_keveredik(self):
+        for eset in ("reszleges", "rossz_megallo", "forditott", "visszavont", "torolt", "azonos_feed"):
+            with self.subTest(eset=eset):
+                m = self.minta()
+                t = m["menetrendi_kozlesek"]
+                if eset == "reszleges":
+                    t.pop()
+                elif eset == "rossz_megallo":
+                    t[0]["megallo_id"] = "MAS"
+                elif eset == "forditott":
+                    t[1]["forras_tervezett_indulas"] = ALAP - 9000
+                elif eset == "visszavont":
+                    t.append(dict(t[0], feed_ido=ALAP - 20, forras_tervezett_indulas=None))
+                elif eset == "torolt":
+                    t[0]["menet_allapot"] = 3
+                else:
+                    t.append(dict(t[0], forras_tervezett_indulas=ALAP - 3000))
+                a = elemzes.ellenorzott_indulasok(m)[0]
+                self.assertEqual(a["tervezett"], ALAP)
+                self.assertEqual(a["indulas"], ALAP + 30)
+                self.assertFalse(a["bkk_terv_ellenorzott"])
+                self.assertIsNone(a["bkk_tervezett_indulas"])
+                self.assertIsNone(a["keses_bkk_terv_mp"])
+
+    def test_a_hev_kulon_forras_marad(self):
+        m = self.minta()
+        m["vonal_id"] = "H8"
+        a = elemzes.ellenorzott_indulasok(m)[0]
+        self.assertEqual(a["tervezett"], ALAP)
+        self.assertEqual(a["terv_allapot"], "hev_gtfs")
+        self.assertFalse(a["bkk_terv_ellenorzott"])
+        self.assertIsNone(a["keses_bkk_terv_mp"])
+
+    def test_hianyzo_erkezest_nem_potolunk_masik_tervbol(self):
+        m = self.minta()
+        for s in m["menetrendi_kozlesek"]:
+            s["forras_tervezett_erkezes"] = None
+        a = elemzes.ellenorzott_indulasok(m)[0]
+        self.assertEqual(a["tervezett"], ALAP)
+        self.assertEqual(a["tervezett_erkezes"], ALAP)
+        self.assertEqual(a["bkk_tervezett_indulas"], ALAP - 3600)
+        self.assertIsNone(a["bkk_tervezett_erkezes"])
+        self.assertIsNone(a["forras_tervezett_erkezes"])
+
+    def test_utolagos_valtas_visszateres_utan_is_latszik(self):
+        m = self.minta()
+        m["menetrendi_kozlesek"] += self.minta(-1800, 60)["menetrendi_kozlesek"]
+        m["menetrendi_kozlesek"] += self.minta(-3600, 90)["menetrendi_kozlesek"]
+        self.assertTrue(elemzes.ellenorzott_indulasok(m)[0]["terv_kesobb_valtozott"])
+
+    def test_ejfel_utani_idot_sem_toljuk_egy_oraval(self):
+        m = self.minta()
+        m["szolgalati_nap"] = "2026-10-16"
+        self.assertEqual(elemzes.ellenorzott_indulasok(m)[0]["indulas"], ALAP + 30)
+
+    def test_hianyzo_tortenetbol_nem_talalunk_ki_elso_megerkezest(self):
+        m = self.minta()
+        m["kozlesek"] += m.pop("menetrendi_kozlesek")
+        a = elemzes.menetrendi_alap(m)
+        m["kozlesek"] = elemzes.kozlesek_ritkitasa(m["kozlesek"])
+        b = elemzes.menetrendi_alap(m)
+        self.assertEqual(a["megallok"], b["megallok"])
+        self.assertEqual(a["megallok"][0]["terv_allapot"], "nincs_tervtortenet")
+        self.assertEqual(a["megallok"][0]["tervezett"], ALAP)
+
+    def test_a_feed_ido_nelkul_nem_lehet_elso_megerkezest_allitani(self):
+        m = self.minta()
+        m["menetrendi_kozlesek"][0]["feed_ido"] = None
+        for sorok in (m["menetrendi_kozlesek"], [m["menetrendi_kozlesek"][0]]):
+            self.assertTrue(all(s["feed_ido"] is not None for s in elemzes.menetrendi_kozlesek(sorok)))
+            m["menetrendi_kozlesek"] = sorok
+            a = elemzes.ellenorzott_indulasok(m)[0]
+            self.assertEqual(a["tervezett"], ALAP)
+            self.assertEqual(a["indulas"], ALAP + 30)
+
+
 class EllenorzottIndulasProba(unittest.TestCase):
     def elso(self, menet):
         return elemzes.ellenorzott_indulasok(menet)[0]
+
+    def test_a_ritkitas_nem_valtoztatja_meg_a_torles_eletciklusat(self):
+        m = kis_menet()
+        m["kozlesek"] = m["kozlesek"][:2]
+        m["kozlesek"] += [kozles(-100, None, sorrend=None, menet_allapot=3,
+                                feed_ido=ALAP + t) for t in (-5, 65, 95, 101)]
+        regi = self.elso(m)
+        self.assertIsNone(regi["indulas"])
+        self.assertEqual(elemzes.fennallo_torles(m["kozlesek"]), ALAP - 5)
+        m["kozlesek"] = elemzes.kozlesek_ritkitasa(m["kozlesek"])
+        uj = self.elso(m)
+        self.assertIsNone(uj["indulas"])
+        self.assertEqual(uj["elutasitas"], "torolt")
+        self.assertEqual(elemzes.fennallo_torles(m["kozlesek"]), ALAP - 5)
+
+    def ismetelt_menet(self):
+        m = kis_menet()
+        m["megallok"] = [dict(m["megallok"][0], sorrend=i, megallo_id="M" + str(i),
+                              tervezett=ALAP + (i - 1) * 100,
+                              lat=47.5 + (i - 1) / 1000) for i in range(1, 6)]
+        m["poziciok"] = [p for i in range(1, 5)
+                          for p in (pont(i * 100 - 80, i), pont(i * 100 - 60, i + 1, 2))]
+        m["poziciok"] += [pont(440, 5), pont(1220, 3), pont(1240, 4, 2),
+                           pont(1320, 4), pont(1340, 5, 2)]
+        m["kozlesek"] = [kozles(t + 50, t, i) for i, t in ((1, 30), (2, 130), (3, 1230), (4, 1330))]
+        m["kozlesek"] += [kozles(t + 80, t, i) for i, t in ((1, 30), (2, 130), (3, 1230), (4, 1330))]
+        return m
+
+    def test_ket_vegighaladas_reszletei_nem_alkotnak_egy_utat(self):
+        m = self.ismetelt_menet()
+        eredeti = copy.deepcopy(m)
+        sorok = elemzes.ellenorzott_indulasok(m)
+        self.assertTrue(all(s["indulas"] is None and s["erkezes"] is None for s in sorok))
+        self.assertTrue(all(s["elutasitas"] == "kevert_vegighaladas" for s in sorok))
+        self.assertEqual(m, eredeti)
+
+    def test_ismetelt_athaladas_ajtonyitas_nelkul_is_ellentmondas(self):
+        m = self.ismetelt_menet()
+        for p in m["poziciok"]:
+            p.update(allapot=2, ajto_nyitva=False)
+        self.assertTrue(all(s["indulas"] is None for s in elemzes.ellenorzott_indulasok(m)))
+
+    def test_a_hevnel_sem_keverhetok_kulon_vegighaladasok(self):
+        m = self.ismetelt_menet()
+        m["vonal_id"] = "H8"
+        self.assertTrue(all(s["elutasitas"] == "kevert_vegighaladas"
+                            for s in elemzes.ellenorzott_indulasok(m)))
+
+    def test_a_valodi_hosszu_varakozas_megmarad(self):
+        m = self.ismetelt_menet()
+        m["poziciok"] = [p for p in m["poziciok"] if p["adat_ido"] <= ALAP + 140 or p["adat_ido"] >= ALAP + 1220]
+        m["poziciok"] += [pont(t, 3, ajto_nyitva=True) for t in range(320, 1220, 60)]
+        sorok = elemzes.ellenorzott_indulasok(m)
+        self.assertEqual([s["indulas"] for s in sorok], [ALAP + t for t in (30, 130, 1230, 1330)])
+        self.assertGreater(sorok[2]["keses_mp"], 1000)
+
+    def test_korabbi_jarmuadat_onmagaban_nem_ront_egy_egyseges_utat(self):
+        m = self.ismetelt_menet()
+        m["kozlesek"] = [s for s in m["kozlesek"] if s["sorrend"] >= 3]
+        sorok = elemzes.ellenorzott_indulasok(m)
+        self.assertEqual([s["indulas"] for s in sorok[2:]], [ALAP + 1230, ALAP + 1330])
+
+    def test_egyetlen_visszaugro_helyzet_meg_nem_uj_vegighaladas(self):
+        m = self.ismetelt_menet()
+        m["poziciok"] = m["poziciok"][:8]
+        m["poziciok"] += [pont(420, 2), pont(440, 3, 2)]
+        m["kozlesek"] = [kozles(t + d, t, i) for i, t in ((1, 30), (2, 130), (3, 230), (4, 330)) for d in (50, 80)]
+        sorok = elemzes.ellenorzott_indulasok(m)
+        self.assertEqual([s["indulas"] for s in sorok], [ALAP + t for t in (30, 130, 230, 330)])
 
     def test_a_vegso_kozles_az_ido_nem_a_gps_kozepe(self):
         m = kis_menet()
@@ -1144,6 +1463,57 @@ class IsmetlesProba(unittest.TestCase):
         elemzes.ismetlesek(sorok)
         self.assertEqual([s["indulas"] for s in sorok], [None, None])
         self.assertTrue(all(s["minoseg"] == "bizonytalan" for s in sorok))
+
+
+class KesesReszletekProba(unittest.TestCase):
+    def test_egy_vonat_tobb_allomason_nem_tobb_vonat(self):
+        sorok = indulasi_sor([ALAP, ALAP + 120, ALAP + 600], [ALAP + 30, ALAP + 240, ALAP + 650])
+        sorok[0].update(menet_id="T1", sorrend=1)
+        sorok[1].update(menet_id="T1", sorrend=2, megallo_id="M2")
+        sorok[2].update(menet_id="T2", sorrend=1)
+        elotte = copy.deepcopy(sorok)
+        eredmeny = elemzes.keses_reszletek(sorok, date(2026, 10, 17))
+        ora = eredmeny["orankent"][0]
+        self.assertEqual(ora["menet_db"], 2)
+        self.assertEqual(ora["maximum"]["megallo_id"], "M2")
+        self.assertEqual(ora["maximum"]["keses_mp"], 120)
+        self.assertEqual(sorok, elotte)
+
+    def test_elutasitott_nem_lesz_maximum_es_a_grafikonban_lyuk_marad(self):
+        sorok = indulasi_sor([ALAP, ALAP + 120, ALAP + 240], [ALAP + 30, ALAP + 900, None])
+        for i,s in enumerate(sorok,1):
+            s.update(menet_id="T1", sorrend=i, megallo_id="M" + str(i))
+        sorok[1]["menetrend_ok"] = False
+        eredmeny = elemzes.keses_reszletek(sorok, date(2026, 10, 17))
+        self.assertEqual(eredmeny["orankent"][0]["maximum"]["keses_mp"], 30)
+        pontok = eredmeny["szelso_utak"][0]["megallok"]
+        self.assertEqual([s["indulas"] for s in pontok], [ALAP + 30, None, None])
+        self.assertEqual([s["tervezett"] for s in pontok], [ALAP, ALAP + 120, ALAP + 240])
+
+    def test_maximum_egyenlosegnel_stabil_es_megmarad_a_tobbi_elofordulas_darabszama(self):
+        sorok = indulasi_sor([ALAP + 120, ALAP], [ALAP + 220, ALAP + 100])
+        a = elemzes.keses_reszletek(sorok, date(2026, 10, 17))
+        b = elemzes.keses_reszletek(list(reversed(sorok)), date(2026, 10, 17))
+        self.assertEqual(a,b)
+        self.assertEqual(a["orankent"][0]["maximum_db"], 2)
+        self.assertEqual(a["orankent"][0]["maximum"]["tervezett"], ALAP)
+
+    def test_ejfel_utani_kozles_az_eredeti_menetrendi_naphoz_tartozik(self):
+        terv = int(datetime.fromisoformat("2026-10-17T23:58:00+02:00").timestamp())
+        sorok = indulasi_sor([terv,terv + 300], [terv + 600,terv + 660])
+        for i,s in enumerate(sorok,1):
+            s.update(menet_id="T1", sorrend=i)
+        eredmeny = elemzes.keses_reszletek(sorok, date(2026, 10, 17))
+        self.assertEqual(len(eredmeny["orankent"]), 1)
+        self.assertEqual(eredmeny["orankent"][0]["ora"], 23)
+        self.assertEqual(eredmeny["orankent"][0]["maximum"]["indulas"], terv + 600)
+        self.assertEqual(len(eredmeny["szelso_utak"][0]["megallok"]), 2)
+
+    def test_korai_idobol_nincs_kitalalt_pozitiv_kesesi_pelda(self):
+        sorok = indulasi_sor([ALAP], [ALAP - 30])
+        eredmeny = elemzes.keses_reszletek(sorok, date(2026, 10, 17))
+        self.assertEqual(eredmeny["orankent"][0]["maximum"]["keses_mp"], -30)
+        self.assertFalse(eredmeny["szelso_utak"])
 
 
 class OsszegzesProba(unittest.TestCase):

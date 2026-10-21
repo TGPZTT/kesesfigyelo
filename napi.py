@@ -594,7 +594,8 @@ for jelolt in reversed(jeloltek):
         f=jelolt/'indulasok.json'
         if f.stat().st_size>26214400: raise ValueError()
         a=json.loads(f.read_text(encoding='utf-8'))
-        if a.get('napi_sema')==1 and a.get('nap')=='NAP' and {s['vonal_id'] for s in a['vonalak']}==keresett:
+        if (a.get('napi_sema')==1 and a.get('nap')=='NAP' and a.get('modszer')=='MODSZER'
+                and {s['vonal_id'] for s in a['vonalak']}==keresett):
             p=jelolt
             break
     except (OSError,ValueError,KeyError,TypeError):
@@ -615,7 +616,7 @@ except (OSError,ValueError,AttributeError):
     statusz={}
 if hibas: statusz['allapot']='hiba'
 print(json.dumps({'mappa':p.name,'fajlok':fajlok,'forras_allapot':statusz}))
-""".replace("DATUM", nap.strftime("%Y%m%d")).replace("NAP", str(nap)).replace("VONALAK", repr(args.vonal.split(",")))
+""".replace("DATUM", nap.strftime("%Y%m%d")).replace("NAP", str(nap)).replace("VONALAK", repr(args.vonal.split(","))).replace("MODSZER", elemzes.MODSZER)
     opciok = ["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=15"]
     ablak = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     valasz = lepes("atadas", subprocess.run, ["ssh", *opciok, args.letoltes, "python3 -c " + shlex.quote(kod)],

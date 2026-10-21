@@ -17,7 +17,7 @@ from psycopg import sql
 
 import betolto
 import gyujto
-from bkk_bovites import JARMU_BOVITES, jarmu_bovites
+from bkk_bovites import JARMU_BOVITES, MEGALLO_BOVITES, jarmu_bovites, megallo_bovites
 
 
 # Ugyanaz a megálló kétszer szerepel, a harmadik idő már másnapra nyúlik.
@@ -78,6 +78,28 @@ def kis_idojaras(ido=1792152000):
 
 
 class BovitesProba(unittest.TestCase):
+    def test_a_foras_menetrendje_kulon_jon_a_becsult_idotol(self):
+        st = pb.TripUpdate.StopTimeUpdate()
+        st.departure.time = 100
+        self.assertEqual(megallo_bovites(st), {"forras_tervezett_erkezes": None,
+                                              "forras_tervezett_indulas": None})
+        st.Extensions[MEGALLO_BOVITES].scheduled_departure.time = 0
+        st.Extensions[MEGALLO_BOVITES].scheduled_arrival.time = 20
+        vissza = pb.TripUpdate.StopTimeUpdate.FromString(st.SerializeToString())
+        self.assertEqual(megallo_bovites(vissza), {"forras_tervezett_erkezes": 20,
+                                                  "forras_tervezett_indulas": 0})
+        self.assertEqual(vissza.departure.time, 100)
+
+    def test_betoltes_megorzi_a_kulon_menetrendi_mezot(self):
+        f = kis_feed()
+        st = f.entity[0].trip_update.stop_time_update[0]
+        st.Extensions[MEGALLO_BOVITES].scheduled_departure.time = 100
+        with patch.object(betolto, "beszur") as beszur:
+            betolto.megfigyeles_betolt(None, 1, 0, f.entity[0], "trip_update", 2, "0460", "vonal_a_feedben")
+        sor = beszur.call_args.args[2]
+        self.assertEqual(sor["forras_tervezett_indulas"], betolto.idopont(100))
+        self.assertIsNone(sor["forras_tervezett_erkezes"])
+
     def test_hianyzo_mezo_nem_zart_ajto(self):
         v = pb.VehicleDescriptor()
         self.assertEqual(jarmu_bovites(v), {"ajto_nyitva": None, "megallo_tavolsag": None, "letert": None})
@@ -263,6 +285,18 @@ class AdatbazisProba(unittest.TestCase):
         self.assertEqual(self.sor("SELECT count(*) FROM nyers_fajl"), (1,))
         self.assertEqual(self.sor("SELECT count(*) FROM megfigyeles"), (1,))
         self.assertEqual(self.sor("SELECT count(*) FROM megallo_frissites"), (1,))
+
+    def test_a_terv_es_a_becsles_kulon_adatbazisos_mezo(self):
+        feed = kis_feed()
+        megallo = feed.entity[0].trip_update.stop_time_update[0]
+        megallo.Extensions[MEGALLO_BOVITES].scheduled_departure.time = megallo.departure.time - 3600
+        megallo.Extensions[MEGALLO_BOVITES].scheduled_arrival.time = megallo.departure.time - 3610
+        self.betolt(self.naplo("TripUpdates", feed.SerializeToString()))
+        sor = self.sor("SELECT extract(epoch FROM indulas)::bigint, "
+                       "extract(epoch FROM forras_tervezett_indulas)::bigint, "
+                       "extract(epoch FROM forras_tervezett_erkezes)::bigint FROM megallo_frissites")
+        self.assertEqual(sor, (megallo.departure.time, megallo.departure.time - 3600,
+                              megallo.departure.time - 3610))
 
     def test_mar_betoltott_naplo_nem_irhato_at_eszrevetlenul(self):
         fajl = self.naplo("TripUpdates", kis_feed().SerializeToString())

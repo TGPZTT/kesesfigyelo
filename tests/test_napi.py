@@ -366,19 +366,23 @@ with zar(Path(sys.argv[1])):
         self.assertIsNone(adat["utolso_siker_utc"])
         self.assertNotIn("jelszo", adat)
 
-    def test_mas_vonalkoru_uj_export_nem_fedi_el_a_kert_vonalakat(self):
+    def test_mas_vonalkoru_vagy_regi_modszeru_uj_export_nem_fedi_el_a_kertet(self):
         with tempfile.TemporaryDirectory() as hely:
             alap = Path(hely) / "laptop"
             alap.mkdir()
             tavoli = Path(hely) / "vps" / "data"
             nevek = ["elemzes-20261019-20261020T060000000000Z-1234abcd",
-                     "elemzes-20261019-20261020T070000000000Z-1234abcd"]
-            for nev, vonal in zip(nevek, ("3046", "H8")):
+                     "elemzes-20261019-20261020T070000000000Z-1234abcd",
+                     "elemzes-20261019-20261020T080000000000Z-1234abcd"]
+            for nev, vonal, modszer in zip(nevek, ("3046", "H8", "3046"),
+                                           (napi.elemzes.MODSZER, napi.elemzes.MODSZER, "kozles-haladas-ajto-3")):
                 mappa = tavoli / nev
                 mappa.mkdir(parents=True)
                 adat = eredmeny()
                 adat["napi_sema"] = 1
+                adat["modszer"] = modszer
                 adat["vonalak"][0]["vonal_id"] = vonal
+                adat["vonalak"][0]["idokeretek"] = [[-30, 30, 3]]
                 napi.json_ir(mappa / "indulasok.json", adat)
                 napi.json_ir(mappa / "adatminoseg.json", minoseg())
             eredeti_fut = subprocess.run
@@ -397,6 +401,7 @@ with zar(Path(sys.argv[1])):
             self.assertEqual(kod, 0)
             self.assertTrue((alap / "data" / nevek[0]).is_dir())
             self.assertFalse((alap / "data" / nevek[1]).exists())
+            self.assertFalse((alap / "data" / nevek[2]).exists())
 
     def test_megsertett_letoltes_nem_kerul_a_megjelenitett_mappaba(self):
         with tempfile.TemporaryDirectory() as hely:

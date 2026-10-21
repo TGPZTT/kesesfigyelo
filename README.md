@@ -38,7 +38,8 @@ PostgreSQL 18.6-tal kipróbálva. A betöltő a már mentett fájlokat olvassa,
 nem kér új BKK- vagy időjárási adatot. Egy futás véges, alapból legfeljebb 20 új naplót tölt be.
 Kapcsolók nélkül csak a súgót írja ki.
 Tíz tábla és egy adatminőség-nézet készül; a táblázatos séma a [módszertanban](MODSZERTAN.md#adatbázisba-töltés) van.
-Az [adatbázisábrán](adatbazis.svg) az oszlopok jelentése és a kulcsok is szerepelnek.
+Az [adatbázisábrán](adatbazis.svg) a tíz tábla, mind a 119 oszlop és a tényleges idegen kulcsok szerepelnek.
+Az ábra a PostgreSQL-sémából készült. Egy vonal egy idegen kulcs, több összetartozó mező esetén közös felirattal.
 A pótlóbuszok és az ellenőrzendő új menetek is bekerülnek, külön `potlas_jelzes` mezővel.
 A `potolt_vonal_id` névegyezésből kapott kapcsolatjelölt, az eredeti buszazonosító megmarad.
 
@@ -163,8 +164,16 @@ A grafikonok a járműtípus BKK-színét használják.
 Az áttekintésben az egy- vagy kétperces menetrendi eltérés alapján összehasonlíthatók a vonalak.
 A H8-nál a közölt idők eltérése és a vonatok közti idő vizsgálható, néhány fő állomás és irány közül választva.
 A HÉV közölt indulását nem keveri a helyzetből becsült érkezéssel teljes menetidővé.
+Az órás bontás a napokat és az irányokat külön mutatja. Az óra a menetrendi indulásé.
+Óránként legalább 30 megállói elindulás kell, HÉV-nél legalább 10 és két külön vonat, legalább 50% lefedettséggel.
+Az összesített órás görbe is csak az ezeknek megfelelő napok és órák adataiból készül. A hiányzó órákon nem húz át vonalat.
+A napi ábra külön jelzi a menetrendi indulás nélküli és az elégtelen adatú órákat, az ok és a darabszám helyben leolvasható.
+A legnagyobb közölt késésnél a hely és az időpont is szerepel. A hozzá tartozó megállósoron a menetrend és a közölt idők együtt látszanak.
+Ez egyetlen szélső eset. A szakaszonkénti medián külön, több jármű megállópárjaiból készül.
+Ezeket a részleteket az elemző a `keses_reszletek` mezőben menti. Régebbi exportból pontos időpontot nem talál ki az oldal.
 Az oldal csak az új módszerrel készült napokat olvassa. A régi exportokat újra kell számolni.
 Az időjárásnézet a nap és napszak átlagos különbségét is figyelembe veszi. Oksági hatást nem állít.
+A pontábra ugyanazokat a korrigált értékeket használja, mint a közölt korreláció. A járatrangsor és a többletvárakozás szövege az aktuális kijelölésből készül.
 A webes csomagok külön, `web` csoportban vannak, a gyűjtőnek nincs rájuk szüksége.
 
 A szerveres változat [itt nyitható meg](https://13.140.139.74/), belépés nélkül.
@@ -223,4 +232,12 @@ uv run --locked --extra web python -m unittest tests.test_elemzes tests.test_nap
 Az automatizált tesztek a `tests/` mappában vannak. Az összes futtatása a repó főmappájából
 `uv run --locked --extra web python -m unittest discover -v` paranccsal történik.
 
-Adatok forrása: BKK Zrt., CC BY 4.0. Időjárás: [Open-Meteo](https://open-meteo.com/), CC BY 4.0; az ingyenes API nem üzleti használatra való.
+A 4-es feldolgozás a késést mindig az adott napra érvényes, letöltött GTFS-menetrendhez méri.
+A BKK más tervezett időpontjai külön ellenőrző adatként maradnak meg, a fő késést nem módosítják.
+Ehhez az új adatbázisoszlopok és a megtartott nyers TripUpdates fájlok újrabetöltése szükséges.
+A régi adatbázist a betöltő nem alakítja át automatikusan.
+Az `atallas.py` külön átállító függvénye a megtartott eredeti válaszokból pótolja az új mezőket.
+A hívó indítja a tranzakciót, és a véglegesítés előtt ellenőrzi a korábbi oszlopok teljes egyezését.
+Az átállás előtt friss mentés kell. A gyűjtő közben tovább menti az új válaszokat.
+
+Adatok forrása: BKK Zrt., CC BY 4.0. Időjárás: [Open-Meteo](https://open-meteo.com/), CC BY 4.0. Az ingyenes API nem üzleti használatra való.

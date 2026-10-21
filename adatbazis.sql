@@ -139,6 +139,8 @@ CREATE TABLE IF NOT EXISTS megallo_frissites (
     indulas_keses INTEGER, -- Másodperc; NULL esetén nincs külön késésmező.
     erkezes_bizonytalansag INTEGER, -- A forrás időbecslésének bizonytalansága, másodpercben.
     indulas_bizonytalansag INTEGER,
+    forras_tervezett_erkezes TIMESTAMPTZ, -- A BKK-kiegészítés menetrendje, nem az érkezési becslés.
+    forras_tervezett_indulas TIMESTAMPTZ, -- Eltérhet a külön letöltött GTFS időpontjától.
     PRIMARY KEY (nyers_id, megfigyeles_sorrend, sorrend),
     FOREIGN KEY (nyers_id, megfigyeles_sorrend) REFERENCES megfigyeles (nyers_id, sorrend)
 );

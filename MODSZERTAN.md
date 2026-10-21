@@ -144,7 +144,7 @@ A hőmérséklet vagy a szél együtt változhat a napszakkal és a forgalommal.
 ## Indulás, késés és várakozás
 
 Az új feldolgozás egyelőre helyi próba. A szerveren futó számítás és a webes eredmények még nem változtak.
-A BKK módszerének neve `kozles-haladas-ajto-1`, a HÉV külön változata `hev-kozles-kontroll-1`.
+A BKK módszerének neve `kozles-haladas-ajto-4`, a HÉV külön változata `hev-kozles-kontroll-4`.
 A kétféle forrást nem vonom közös pontossági rangsorba. A régi és új exportot sem keverem.
 
 A feladat lényegi buktatója, hogy a TripUpdates indulási ideje előrejelzés is lehet.
@@ -166,9 +166,24 @@ Az új szabály
 4. Ha van használható ajtójel, az ellentmondását is figyelem. A BKK-jármű közölt indulásánál több mint öt másodperccel későbbi nyitott ajtó kizárja az esetet. Az öt másodperc választott technikai tűrés, nem igazolt pontosság.
 5. Ellenőrzöm az időrendet és a más közlekedésekhez is hozzárendelt járműadatokat. A kihagyott megállót, a törlést és a hiányt külön kezelem.
 
+Egy azonosítóhoz néha több végighaladás helyzetei tartoznak. Az újabb végighaladást két korábban és két később követhető megállóelhagyás jelzi, visszalépő megállósorrenddel.
+Egyetlen visszaugró sorszám vagy a legfeljebb kétperces helyi ingadozás erre nem elég.
+Ha az elfogadandó indulások külön végighaladásokból származnak, az egész út kimarad az indulási és menetidő-számításból. Nem választom ki közülük utólag a menetrendhez közelebbit.
+A késés nagysága nem kizárási feltétel. A helyben várakozó jármű és a megállás nélküli továbbhaladás megmaradhat.
+A ritka helyzetadatok miatt minden ismételt végighaladás felismerése ezzel sem garantált. A közös adatforrás hibája továbbra is korlát.
+Az útvonalas ábra indulási időket mutat, két pont közti különbségből állásidő nem állapítható meg.
+
+Az október 21-i nyersadat-ellenőrzés a ZIP-től eltérő, külön BKK-tervet is talált.
+Más esetekben a jármű útazonosítója haladás vagy fordulás közben változott meg.
+Ebből az üzemi ok és a helyes menetrendi párosítás nem dönthető el.
+Órákat nem tolok el feltételezésből, és a nagy eltérést önmagában nem törlöm.
+A menetrendi összevetés forrás szerinti eredmény, helyszíni igazolás nélkül.
+
 A törlési jelzés ideje a válaszhoz tartozik, nem az abban szereplő régi járműméréshez.
 Későbbi, friss járműadattal közölt normál állapot feloldhatja a törlést. Egy régi válasz ismétlése erre nem elég.
 A törlési jelzés előtt már megtörtént és ellenőrizhető elindulás megmaradhat.
+A törlési jelzést tartalmazó járműutak teljes közléssora megmarad, ritkítás nélkül.
+Így a törlés első megjelenése és az esetleges visszaállítás időrendje sem veszhet el.
 
 Az ajtónyitás vagy az álló mintapont nem követelmény. A busz rövid megállása két mintavétel közé eshet,
 és utas hiányában megállás nélkül is továbbmehet. Ezeket megtartom, ha a többi feltétel teljesül.
@@ -188,9 +203,30 @@ A mozgásból számolt régi becslés összehasonlításként megmarad. A mozgá
 nem mérési hibahatár, és nem használható igazolt pontossági tartományként.
 A legfeljebb 60 másodperces megfigyelési közökkel külön szigorúbb összesítés is készül.
 
+Mihez képest számolom a késést?
+
+A késés alapja mindig az adott napra érvényes, letöltött GTFS-menetrend.
+Ugyanannak az útnak ugyanazon megállójában a közölt indulásból kivonom a menetrendi indulást.
+Ha a menetrendben 06:00, a közölt indulásnál 06:10 szerepel, a késés tíz perc.
+A napi és órás bontás, a szakaszok és a menetrendi várakozás is ezt a menetrendet használja.
+
+A BKK a TripUpdates válaszban külön tervezett érkezést és indulást is közölhet.
+Ezek néha eltérnek a letöltött menetrendtől. Megőrzöm őket ellenőrzéshez, de nem írják át a fő késést.
+Ha a fenti esetben ebben a mezőben 06:05 szerepel, az ahhoz képest kapott öt perc csak külön ellenőrző érték.
+Ehhez a teljes megállósor első követhető mozgás előtt ismert, időrendben helyes változatát használom.
+A hiányzó BKK-érkezést nem pótolom másik forrásból. A később átírt terv és a változások időpontja is megmarad.
+
+A letöltött menetrend a meghirdetett közlekedés elérhető összehasonlítási alapja.
+A megállóban kifüggesztett minden változatot nem rögzítettem külön, ezért azok teljes egyezését nem tudom igazolni.
+A félórás vagy nagyobb eltérés mindkét irányban ellenőrzési jelzés,
+nem törlési szabály. Másik menetrendi utat nem választok pusztán az időbeli közelség alapján.
+Az azonosító és a mozgás egyezése még nem bizonyítja, hogy a szolgáltató a megfelelő menetrendi úthoz rendelte a járművet.
+
 A HÉV külön eset
 
-A HÉV-nél az ajtójel használhatósága nem igazolt, ezért nem szűrök vele.
+A HÉV-nél az ajtójel használhatósága nem igazolt. A közölt idő után nyitottnak jelzett ajtó itt nem kizárási ok.
+A közös mozgásellenőrzés egy közeli megállósorszám-visszalépést nyitott ajtóval vagy álló állapottal fogadhat el.
+A megállásjel szerinti besorolás is olvassa az ajtómezőt, ezért a jelenlegi kód nem teljesen független ettől a mezőtől.
 A közölt indulást és a helyzetből becsült időt külön tartom meg. Nincs önkényes időeltolás.
 A követési időt és a két állomás közölt indulása között eltelt időt lehet vizsgálni.
 Utóbbi az egyik állomás indulásától a következő indulásáig tart, ezért a következő állomáson töltött időt is tartalmazza.
@@ -210,8 +246,10 @@ Egy jármű végighaladása több megállói adatot ad, ezek nem független utaz
 
 Az ajtójelet, sebességet és két további BKK-mezőt az eredeti bináris válaszokból lehet visszanyerni.
 Az új betöltő külön oszlopokban tárolja őket. A hiányzó ajtójel NULL marad, nem hamis érték.
-A régi adatbázis sémáját a program nem alakítja át magától. A háromnapos helyi próba a mentett mintákat
-és az eredeti járműválaszok ellenőrzött kivonatát használja, adatbázis-módosítás nélkül.
+A külön menetrendi időket is az eredeti bináris válasz őrzi, ezért a régi betöltés ezek nélkül nem elég.
+A betöltő új sémában külön oszlopokba menti őket. Az elemző a tervváltozások első beérkezését is megtartja.
+A régi adatbázis sémáját a program nem alakítja át magától. A négynapos helyi próba mentett mintákat
+és az eredeti válaszok ellenőrzött kivonatát használja. Az adatbázisos visszaolvasás külön tesztsémában történik.
 
 Várakozás és buszválasztás
 
@@ -283,7 +321,9 @@ A mentés visszaállítását külön próba-adatbázisban ellenőriztem. A két
 
 Tíz tábla van, az órás adatminőség külön számított nézet.
 
-[Az adatbázis teljes ábrája](adatbazis.svg) minden oszlopot, típust, rövid jelentést és a tényleges PK/FK-kapcsolatokat mutatja.
+[Az adatbázis teljes ábrája](adatbazis.svg) a tíz fizikai tábla 119 oszlopát és a 12 tényleges idegen kulcsot mutatja.
+Az idegen kulcs egy másik tábla sorára hivatkozik. Összetett idegen kulcsnál több mezőnek együtt kell egyeznie.
+Egy kapcsolat egy vonal, az összetartozó mezők közös felirattal látszanak. Az adattípusok az `adatbazis.sql` fájlban vannak.
 Az SVG nagyítható, így az apró oszlopnevek is olvashatók. A PK elsődleges kulcs, az FK idegen kulcs.
 Ha egy kulcs több oszlopból áll, azokat együtt kell használni. A kapcsolatvégek Crow’s Foot jelölést használnak.
 A valós idejű menet menetrendhez párosítása nem kikényszerített idegen kulcs, ezért nincs valódi FK-ként berajzolva.

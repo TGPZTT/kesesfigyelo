@@ -111,6 +111,7 @@ uv run --locked python napi.py --letoltes kesesfigyelo --nap 2026-10-19
 
 A laptop `Kesesfigyelo eredmenyek` feladata 09.00-kor és bejelentkezéskor másolja át az eredményt.
 A web percenként észreveszi az új exportot, a számokkal együtt a következtetések is változnak.
+A napi feldolgozás hibánál öt perc múlva újrapróbálkozik, egy órán belül legfeljebb három indítással.
 Az adatbázisról naponta `.dump` mentés készül. A kész mentéseket és a nyers fájlokat óránként másolja a Drive-mentés.
 A tesztüzemű Google-engedélyt hetente meg kell újítani.
 

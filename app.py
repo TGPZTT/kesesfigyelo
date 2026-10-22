@@ -135,12 +135,29 @@ def abra(kep, magyarazat="", margok=None):
         st.caption(magyarazat)
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=8)
 def beolvas(fajl, modositas):
     adat = json.loads(Path(fajl).read_text(encoding="utf-8"))
     if isinstance(adat, dict):
         adat.pop("esemenyek", None)
     return adat
+
+
+@st.cache_data(show_spinner=False, max_entries=128)
+def mentes_fejlece(fajl, modositas):
+    """A napi változatok kiválasztásához csak a rövid leírás marad a memóriában."""
+    adat = json.loads(Path(fajl).read_text(encoding="utf-8"))
+    if regi_modszer(adat):
+        if not isinstance(adat.get("nap"), str):
+            raise ValueError("Hiányzó nap.")
+        return {"nap": adat["nap"], "regi": True}
+    minta_ellenorzese(adat)
+    if adat["forras_csoport"] != "bkk":
+        raise ValueError("A HÉV a napi eredmény külön része.")
+    return {"nap": adat["nap"], "modszer": adat["modszer"],
+            "keszult_utc": adat.get("keszult_utc", ""),
+            "mintamenetek": bool(adat.get("mintamenetek")),
+            "vonalak": [s["vonal_id"] for s in adat["vonalak"]]}
 
 
 def mentesek_allapota():
@@ -1756,16 +1773,10 @@ def main():
     regi_napok = set()
     for fajl in sorted((MAPPA / "data").glob("elemzes*/indulasok.json")):
         try:
-            adat = beolvas(str(fajl), fajl.stat().st_mtime_ns)
-            if regi_modszer(adat):
-                if isinstance(adat.get("nap"), str):
-                    regi_napok.add(adat["nap"])
-                else:
-                    raise ValueError("Hiányzó nap.")
+            adat = mentes_fejlece(str(fajl), fajl.stat().st_mtime_ns)
+            if adat.get("regi"):
+                regi_napok.add(adat["nap"])
                 continue
-            minta_ellenorzese(adat)
-            if adat["forras_csoport"] != "bkk":
-                raise ValueError("A HÉV a napi eredmény külön része.")
             mintak[fajl] = adat
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             st.warning("Egy mentés nem olvasható vagy hiányos. A többi nap továbbra is használható.")
@@ -1796,8 +1807,22 @@ def main():
     if not valasztott:
         st.info("Az elemzéshez legalább egy nap kijelölése szükséges.")
         return
-    adatok = [mintak[napok[n]] for n in sorted(valasztott)]
-    fajlok = [napok[n] for n in sorted(valasztott)]
+    # A teljes adatok csak a kiválasztott napok nyertes változatából kellenek.
+    adatok, fajlok = [], []
+    for nap in sorted(valasztott):
+        fajl = napok[nap]
+        try:
+            adat = beolvas(str(fajl), fajl.stat().st_mtime_ns)
+            minta_ellenorzese(adat)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            st.warning("Egy mentés nem olvasható vagy hiányos. A többi nap továbbra is használható.")
+            continue
+        adatok.append(adat)
+        fajlok.append(fajl)
+    if not adatok:
+        st.info("Még nincs megjeleníthető elemzési eredmény.")
+        mentes_allapota(None)
+        return
     if any(a.get("mintamenetek") for a in adatok):
         st.warning("A kiválasztás próbamintát is tartalmaz, nem teljes napi vonalvizsgálat.")
     st.sidebar.markdown("**A járatok színei**")

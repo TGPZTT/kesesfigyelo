@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from html.parser import HTMLParser
 from importlib.util import find_spec
 from pathlib import Path
+from unittest.mock import patch
 
 WEB_ELERHETO = find_spec("streamlit") is not None and find_spec("plotly") is not None
 if WEB_ELERHETO:
@@ -476,10 +477,22 @@ class WebTeszt(unittest.TestCase):
         proba["mintamenetek"] = ["proba"]
         for nev, adat in (("regi", regi), ("uj", uj), ("proba", proba)):
             self.ment(nev, adat)
-        oldal = self.megjelenit()
+        # A korábbi változatok teljes tartalma nem kerül a megjelenítés gyorsítótárába.
+        with patch.object(app, "beolvas", wraps=app.beolvas) as olvas:
+            oldal = self.megjelenit()
+            self.assertEqual([Path(h.args[0]).parent.name for h in olvas.call_args_list], ["elemzes-uj"])
         self.rendben(oldal)
         self.assertEqual(self.darab(oldal), "80")
         self.assertNotIn("próbamintát", self.szoveg(oldal))
+        fajl = self.mappa / "data" / "elemzes-uj" / "indulasok.json"
+        fejlec = app.mentes_fejlece(str(fajl), fajl.stat().st_mtime_ns)
+        self.assertNotIn("orankent", fejlec)
+        self.assertEqual(fejlec["vonalak"], ["0975"])
+        with patch.object(app, "beolvas", wraps=app.beolvas) as olvas:
+            oldal.run()
+            self.assertEqual([Path(h.args[0]).parent.name for h in olvas.call_args_list], ["elemzes-uj"])
+        self.rendben(oldal)
+        self.assertEqual(self.darab(oldal), "80")
 
     def test_hibas_export_mellett_a_jo_minden_oldalon_hasznalhato(self):
         self.ment("jo", minta("2026-10-19"))

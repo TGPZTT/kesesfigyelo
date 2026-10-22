@@ -21,9 +21,23 @@ Egy járműút során a jármű egy adott napra tervezett útvonalat egyszer vé
 A továbbhaladás a jármű indulását vagy megállás nélküli elhaladását jelenti egy adott megállónál.
 A megállósorszám is része az azonosításnak, mert az útvonal visszatérhet ugyanahhoz a megállóhoz.
 
-A gyűjtő a teljes válaszokat menti, az adatbázis a kijelölt járatokat, a pótlásjelölteket és a nem feloldott megfigyeléseket tartja meg.
-A nyers fájlok tömörítve, SHA256 tartalmi ellenőrző összeggel maradnak meg. A program minden lekérési kísérletet külön naplósorba ír.
-Ugyanaz a napló és ugyanaz a teljes válasz nem kerül kétszer feldolgozásra. Egy napló betöltése vagy teljesen sikerül, vagy visszagördül.
+## A gyűjtéstől a weboldalig
+
+A BKK válaszai több jármű és megálló adatait is tartalmazzák. Ugyanarról az indulásról először becslés,
+később már elmúlt időpont érkezhet, majd a közlés eltűnhet a forrásból. A mentésekből ezek változása is visszanézhető.
+
+| Lépés | Mi történik? |
+| --- | --- |
+| Lekérés | A VPS-en futó `gyujto.py` ütemezve lekéri a BKK és az Open-Meteo adatait. |
+| Nyers mentés | A válasz tömörített fájlba kerül. A tartalmából számított SHA256 ellenőrző összeg azonosítja, így a változatlan válasz nem kap új fájlt. Minden lekérési kísérlet külön naplóbejegyzést kap, a hibás és az ismételt is. |
+| Adatbázis | A `betolto.py` ötpercenként legfeljebb száz új naplót vesz át. A kijelölt járatok, a pótlásjelöltek és a még nem azonosított közlések adatait PostgreSQL-táblákba bontja. Az ismételt betöltés nem duplázza az adatokat, hibánál pedig nem marad félkész betöltés. |
+| Napi elemzés | A `napi.py` az előző nap eltárolt adataiból számol. Az `elemzes.py` összerendeli a közléseket, ellenőrzi az indulásokat, majd elkészülnek az összesítések és az újraszámoláshoz szükséges bemeneti minta. |
+| Weboldal | Az ellenőrzött napi eredményfájlok átkerülnek a web külön adatmappájába. Az `app.py` ezeket olvassa, és az új nap adataival a grafikonok és a következtetések is frissülnek. |
+| Működésfigyelés | Egy külön program percenként ellenőrzi, hogy fut-e a gyűjtő, elég frissek-e a sikeres lekérések, és megvannak-e a mentett fájlok. Életjelet vagy hibajelzést küld a Healthchecks.io-nak. Hiba vagy elmaradó életjel esetén emailes értesítés érkezik. |
+| Biztonsági mentés | Az adatbázisról naponta mentés készül. A nyers fájlokat és a kész adatbázismentéseket óránként másolja a rendszer a Google Drive-ra. |
+
+A számításból kihagyott közlés nyers mentése és adatbázissora megmarad. A feldolgozás ezért újrafuttatható a gyűjtés megismétlése nélkül.
+A Healthchecks.io a működést figyeli, az indulási adatok helyességét nem igazolja, és nem indítja újra a gyűjtőt.
 A kapcsolatok az [adatbázisábrán](adatbazis.svg), a pontos mezők az [SQL-sémában](adatbazis.sql) láthatók.
 
 A félperces helyzet- és induláslekérés a megállók közti mozgáshoz kell, a ritkábban változó zavarokhoz egy perc elég.
@@ -31,6 +45,7 @@ Két kérés kezdete között legalább tíz másodperc van. Ezek saját beáll�
 
 A hálózati és válaszhibák várakozást és naplóbejegyzést okoznak. Hibás hozzáférésnél vagy mentési hibánál a gyűjtő leáll,
 hogy ne írjon észrevétlenül hibás adatot. Az újraindítás nem indít pótló kérésrohamot.
+Hibás kilépés után a systemd szolgáltatáskezelő egy perc múlva újraindítja a gyűjtőt. A VPS újraindulásakor is automatikusan elindul.
 
 ## Hogyan lesz a közlésekből továbbhaladási idő?
 

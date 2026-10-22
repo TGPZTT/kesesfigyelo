@@ -19,6 +19,7 @@ A számítás szabályai a [módszertanban](MODSZERTAN.md), a kapcsolatok az [ad
 | Contabo VPS, Ubuntu 24.04.5 LTS, systemd | Gyűjtés és időzített feldolgozás a laptop nélkül is. |
 | Caddy 2.11.7 | HTTPS-elérés és a tanúsítvány megújítása. |
 | rclone, Google Drive | A nyers fájlok és a kész adatbázismentések másolása. |
+| Healthchecks.io | A gyűjtés külön működésfigyelőjének életjeleit fogadja, hibánál vagy elmaradó életjelnél értesít. |
 | VS Code, Codex, Git, GitHub, OpenSSH | Helyi fejlesztés, verziókezelés és szerverelérés. |
 | unittest, Ruff | Automatizált tesztek és kódellenőrzés. |
 
@@ -30,9 +31,6 @@ Python 3.14.8 és uv szükséges. A repó főmappájában futtasd a következő 
 uv sync --locked --extra web
 ```
 
-Az [.env.example](.env.example) `BKK_API_KEY` sorából készíts `.env.bkk` fájlt a saját BKK-kulcsoddal.
-A PG kezdetű sorokból készíts `.env.db` fájlt az adatbázisod adataival. Ezek és a `data/` tartalma nem kerülnek Gitbe.
-
 A kiszámolt `elemzes*/indulasok.json` és a hozzá tartozó `adatminoseg.json` fájlokat a `data/` alá másolva
 az oldal adatbázis és BKK-kulcs nélkül is elindul.
 
@@ -41,6 +39,9 @@ uv run --locked --extra web streamlit run app.py --server.address 127.0.0.1
 ```
 
 ## Gyűjtés és adatbázis
+
+Az [.env.example](.env.example) `BKK_API_KEY` sorából készíts `.env.bkk` fájlt a saját BKK-kulcsoddal.
+A PG kezdetű sorokból készíts `.env.db` fájlt az adatbázisod adataival. Ezek és a `data/` tartalma nem kerülnek Gitbe.
 
 Az első két parancs egyszeri próba, a harmadik tartós gyűjtést indít.
 

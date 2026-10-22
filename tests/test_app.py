@@ -519,7 +519,7 @@ class WebTeszt(unittest.TestCase):
         hely = self.ment("jo", adat)
         oldal = self.megjelenit()
         self.nezet(oldal, 1)
-        mondat = "A hiányzó vagy elutasított közlésnél megszakad a vonal."
+        mondat = "(A hiányzó vagy elutasított közlésnél megszakadhat a vonal.)"
         self.assertNotIn(mondat, self.szoveg(oldal))
         self.assertIn("legnagyobb növekedés", self.szoveg(oldal))
         pontok = adat["keses_reszletek"]["szelso_utak"][0]["megallok"]
@@ -935,7 +935,7 @@ class WebTeszt(unittest.TestCase):
         self.assertEqual(oldal.selectbox(key="hev_irany").value,0)
         self.assertIn("következő két ábrához",oldal.selectbox(key="hev_irany").label)
         self.assertEqual(oldal.selectbox(key="hev_szakasz_irany").label,
-                         "Irány a szakaszábrához és az alábbi esethez")
+                         "A megállósoros ábrák iránya")
         self.assertEqual(sum(s.value == "Hogyan változik az eltérés két megálló között?"
                              for s in oldal.subheader), 1)
         sorok.append(dict(sorok[0],megallo_id="D"))
@@ -1233,7 +1233,7 @@ class MenetrendiForrasSzovegProba(unittest.TestCase):
         szoveg = " ".join(app.menetrendi_alap_szoveg(egyutt))
         self.assertIn("80 megállói indulás", szoveg)
         self.assertIn("5 esetben", szoveg)
-        self.assertIn("nem módosítja", szoveg)
+        self.assertIn("nem ezt vettem alapnak, hanem a menetrendet", szoveg)
         self.assertIn("3 eltérés", szoveg)
         mas = " ".join(app.menetrendi_alap_szoveg(sorok[1:]))
         self.assertIn("20 megállói indulás", mas)

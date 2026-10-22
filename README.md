@@ -1,6 +1,6 @@
 # Késésfigyelő
 
-BKK-járatok menetrendi eltérése, követési ideje és számított várakozása mentett adatokból.
+A Késésfigyelő a BKK mentett adataiból számol menetrendi eltérést, követési időt és várakozást.
 A [weboldal](https://13.140.139.74/) belépés nélkül megnyitható.
 A számítás szabályai a [módszertanban](MODSZERTAN.md), a kapcsolatok az [adatbázisábrán](adatbazis.svg) vannak.
 
@@ -24,7 +24,7 @@ A számítás szabályai a [módszertanban](MODSZERTAN.md), a kapcsolatok az [ad
 
 ## Helyi indítás
 
-Python 3.14.8 és uv szükséges. A repó főmappájában
+Python 3.14.8 és uv szükséges. A repó főmappájában futtasd a következő parancsot.
 
 ```powershell
 uv sync --locked --extra web
@@ -34,18 +34,15 @@ Az [.env.example](.env.example) `BKK_API_KEY` sorából készíts `.env.bkk` fá
 A PG kezdetű sorokból készíts `.env.db` fájlt az adatbázisod adataival. Ezek és a `data/` tartalma nem kerülnek Gitbe.
 
 A kiszámolt `elemzes*/indulasok.json` és a hozzá tartozó `adatminoseg.json` fájlokat a `data/` alá másolva
-az oldal adatbázis és BKK-kulcs nélkül is elindul
+az oldal adatbázis és BKK-kulcs nélkül is elindul.
 
 ```powershell
 uv run --locked --extra web streamlit run app.py --server.address 127.0.0.1
 ```
 
-Eredményfájl nélkül előbb gyűjteni, adatbázisba tölteni és elemezni kell.
-
 ## Gyűjtés és adatbázis
 
-Az első parancs egyszeri, háromkéréses kulcspróba. A második egyszer ment menetrendet.
-Csak a harmadik indít folyamatos gyűjtést, terminálból Ctrl+C állítja le.
+Az első két parancs egyszeri próba, a harmadik tartós gyűjtést indít.
 
 ```powershell
 uv run --locked python proba.py
@@ -57,7 +54,8 @@ A járműhelyzetek és indulási közlések 30, a forgalmi jelzések 60 másodpe
 A menetrendet naponta, az időjárást 15 percenként ellenőrzi a gyűjtő.
 A nyers válaszok tömörítve, a lekérési kísérletek külön naplóban maradnak meg.
 
-Új helyi PostgreSQL Dockerrel, PowerShellben. Meglévő adatbázisnál ezt a létrehozást hagyd ki.
+A következő parancsok új helyi PostgreSQL-adatbázist indítanak Dockerrel, PowerShellből.
+Meglévő adatbázisnál ezt a létrehozást hagyd ki.
 
 ```powershell
 $env:POSTGRES_PASSWORD = [Net.NetworkCredential]::new("", (Read-Host "Postgres admin jelszó" -AsSecureString)).Password
@@ -66,7 +64,7 @@ $env:POSTGRES_PASSWORD = $null
 docker exec -it kesesfigyelo-db-1 psql -U postgres
 ```
 
-A megnyíló SQL-parancssorban
+A megnyíló SQL-parancssorban hozd létre a felhasználót és az adatbázist.
 
 ```sql
 CREATE ROLE kesesfigyelo_betolto LOGIN;
@@ -96,25 +94,25 @@ A gyűjtő a `/home/ubuntu/kesesfigyelo` alatt fut. A betöltés ötpercenként 
 A napi elemzés budapesti idő szerint 06.15-kor dolgozza fel a tegnapot.
 A web külön felhasználóval, az `/opt/kesesfigyelo-web` alól fut, és csak a `/var/lib/kesesfigyelo-web/data`
 ellenőrzött exportjait olvassa. Az adatbázishoz és a BKK-kulcshoz nincs hozzáférése.
-A jó eredmények automatikusan átkerülnek a webhez. A kód frissítése külön telepítés, a push önmagában nem telepít.
+A jó eredmények automatikusan átkerülnek a webhez. A Git-push nem telepíti a szerver kódját.
 
-Állapotellenőrzés SSH-belépés után
+SSH-belépés után ezekkel a parancsokkal ellenőrizhetők a szolgáltatások.
 
 ```bash
 systemctl status kesesfigyelo.service kesesfigyelo-web.service
 systemctl list-timers 'kesesfigyelo*'
 ```
 
-A `kesesfigyelo` SSH-kapcsolat beállítása után egy kész nap letölthető a laptopra
+A `kesesfigyelo` SSH-kapcsolat beállítása után egy kész nap letölthető a laptopra.
 
 ```powershell
 uv run --locked python napi.py --letoltes kesesfigyelo --nap 2026-10-19
 ```
 
-A laptop `Kesesfigyelo eredmenyek` feladata 09.00-kor és bejelentkezéskor másol, bekapcsolt gépen.
+A laptop `Kesesfigyelo eredmenyek` feladata 09.00-kor és bejelentkezéskor másolja át az eredményt.
 A web percenként észreveszi az új exportot, a számokkal együtt a következtetések is változnak.
 Az adatbázisról naponta `.dump` mentés készül. A kész mentéseket és a nyers fájlokat óránként másolja a Drive-mentés.
-A tesztüzemű Google-engedélyt hét nap után újra jóvá kell hagyni.
+A tesztüzemű Google-engedélyt hetente meg kell újítani.
 
 ## Tesztek és fájlok
 
@@ -134,5 +132,5 @@ környezeti változóban. Enélkül ezek a próbák kimaradnak.
 | `tests/` | Automatizált próbák. |
 | `data/` | Nyers válaszok, naplók, menetrendek, exportok és mentések, Gitből kizárva. |
 
-Források [BKK OpenData](https://opendata.bkk.hu/data-sources) és [Open-Meteo](https://open-meteo.com/), CC BY 4.0.
+A forrás a [BKK OpenData](https://opendata.bkk.hu/data-sources) és az [Open-Meteo](https://open-meteo.com/), CC BY 4.0 licenccel.
 Az oldal feldolgozott adatokat mutat. Az Open-Meteo ingyenes végpontja nem üzleti használatra való.

@@ -1,7 +1,6 @@
 # Módszertan
 
 A vizsgálat a menetrendi eltérést, a járatok közti szüneteket és az ezekből számított várakozást hasonlítja össze.
-A program nem utasokat mér, és nem készít élő utazási előrejelzést.
 
 ## Adatok és kiválasztás
 
@@ -15,15 +14,15 @@ A program nem utasokat mér, és nem készít élő utazási előrejelzést.
 
 A tíz alapjárat buszból a 46, 97E, 161, 169E, villamosból az 1, 2, 3, 4–6, troliból a 80 és 82.
 A keleti városrész buszai a közös cél felé utazás összevetéséhez kellenek, a többi járat eltérő közlekedési helyzeteket ad.
-A 4–6 egy csoport. A 2026. október 16-i menetrendben Újbuda-központból 07.01, 07.03, 07.05 és 07.07 szerepelt,
-tehát van öt percnél sűrűbb követésű példa. A H8 külön kiegészítés. A kiválasztás nem egész Budapestet képviseli.
+A 4–6 egy csoportként szerepel. A 2026. október 16-i menetrendben Újbuda-központból 07.01, 07.03, 07.05 és 07.07 szerepelt,
+így teljesül az öt percnél sűrűbb követés feltétele. A H8 külön kiegészítésként szerepel.
 
-Egy járműút egy konkrét, adott napra tervezett végighaladás. Ugyanaz a busz több ilyet teljesíthet.
-Egy megállói továbbhaladás ennek egyetlen megállóhoz tartozó eseménye, nem egy teljes utazás.
+Egy járműút során a jármű egy adott napra tervezett útvonalat egyszer végigjár. Ugyanaz a busz több ilyet teljesíthet.
+A továbbhaladás a jármű indulását vagy megállás nélküli elhaladását jelenti egy adott megállónál.
 A megállósorszám is része az azonosításnak, mert az útvonal visszatérhet ugyanahhoz a megállóhoz.
 
 A gyűjtő a teljes válaszokat menti, az adatbázis a kijelölt járatokat, a pótlásjelölteket és a nem feloldott megfigyeléseket tartja meg.
-A nyers fájlok tömörítve, SHA256 tartalmi ellenőrző összeggel maradnak meg. Minden lekérési kísérlet külön naplósor.
+A nyers fájlok tömörítve, SHA256 tartalmi ellenőrző összeggel maradnak meg. A program minden lekérési kísérletet külön naplósorba ír.
 Ugyanaz a napló és ugyanaz a teljes válasz nem kerül kétszer feldolgozásra. Egy napló betöltése vagy teljesen sikerül, vagy visszagördül.
 A kapcsolatok az [adatbázisábrán](adatbazis.svg), a pontos mezők az [SQL-sémában](adatbazis.sql) láthatók.
 
@@ -32,8 +31,6 @@ Két kérés kezdete között legalább tíz másodperc van. Ezek saját beáll�
 
 A hálózati és válaszhibák várakozást és naplóbejegyzést okoznak. Hibás hozzáférésnél vagy mentési hibánál a gyűjtő leáll,
 hogy ne írjon észrevétlenül hibás adatot. Az újraindítás nem indít pótló kérésrohamot.
-Október 18-án 19.17 és 19.30 között szerverleállás miatt kimaradt a gyűjtés, majd magától folytatódott.
-A kimaradt időszakot nem pótolom kitalált adatokkal.
 
 ## Hogyan lesz a közlésekből továbbhaladási idő?
 
@@ -42,7 +39,7 @@ A válasz elkészítésének ideje, a járműadat saját ideje és a letöltés 
 Egy válasz ismételt letöltése nem új járműmérés. A helyzet és az előrejelzés közös rendszerből származhat,
 ezért egyezésük nem független bizonyíték.
 
-A program egy járműút egy megállójához tartozó teljes mentett közléssort vizsgál. A BKK-számítás fő ellenőrzései
+A program egy járműút egy megállójához tartozó teljes mentett közléssort vizsgál. A következőket ellenőrzi.
 
 1. A jármű, a járműút, a szolgálati nap, a megálló és a megállósorrend összetartozik-e?
 2. A két legutóbbi, külön saját időbélyegű közlés ugyanazt a már elmúlt indulást adja-e, nulla közölt bizonytalansággal?

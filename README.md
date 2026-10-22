@@ -1,49 +1,77 @@
 # Késésfigyelő
 
-A Késésfigyelő a BKK mentett adataiból számol menetrendi eltérést, követési időt és várakozást.
-A [weboldal](https://13.140.139.74/) belépés nélkül megnyitható.
-A számítás szabályai a [módszertanban](MODSZERTAN.md), a kapcsolatok az [adatbázisábrán](adatbazis.svg) vannak.
+A program a BKK mentett adataiból vizsgálja a késéseket, a járatok közti időt és az utas várakozását.
+A [weboldal](https://13.140.139.74/) belépés nélkül megnyitható, és naponta új eredményekkel bővül.
 
-## Használt eszközök
+## Dokumentáció
 
-| Eszköz vagy szolgáltatás | Feladata |
+| Anyag | Tartalom |
 | --- | --- |
-| Python 3.14.8, uv | Elkülönített környezet, a csomagverziókat az `uv.lock` rögzíti. |
-| BKK OpenData, GTFS és GTFS Realtime | Menetrend, járműhelyzetek, indulási közlések és forgalmi jelzések. |
-| Open-Meteo | Negyedórás térségi időjárási modelladatok. |
-| `gtfs-realtime-bindings` 3.0.0, Protobuf | A BKK bináris válaszainak kiolvasása. |
-| PostgreSQL 18.6, `psycopg` 3.3.6 | Relációs adatbázis és Python-kapcsolat. |
-| Streamlit 1.66.0, Plotly 6.9.0 | Webes felület és interaktív ábrák. |
-| pandas 3.0.6, NumPy 2.5.4, tzdata 2026.5 | Táblázatok, kapcsolatvizsgálat és időzónák. |
-| Docker Desktop | Helyi PostgreSQL és tesztadatbázis. A VPS-en a PostgreSQL közvetlenül fut. |
-| Contabo VPS, Ubuntu 24.04.5 LTS, systemd | Gyűjtés és időzített feldolgozás a laptop nélkül is. |
-| Caddy 2.11.7 | HTTPS-elérés és a tanúsítvány megújítása. |
-| rclone, Google Drive | A nyers fájlok és a kész adatbázismentések másolása. |
-| Healthchecks.io | A gyűjtés külön működésfigyelőjének életjeleit fogadja, hibánál vagy elmaradó életjelnél értesít. |
-| VS Code, Codex, Git, GitHub, OpenSSH | Helyi fejlesztés, verziókezelés és szerverelérés. |
-| unittest, Ruff | Automatizált tesztek és kódellenőrzés. |
+| [Adatgyűjtési terv](docs/adatgyujtesi-terv.docx) | A terv leírja, milyen adatokat gyűjt a rendszer, és hogyan dolgozza fel őket. |
+| [Dokumentáció](docs/dokumentacio.docx) | A dokumentum bemutatja a rendszert, az eredményeket és a korlátokat. |
+| [Adatcsomagok és döntések](docs/adatcsomagok-es-dontesek.docx) | Valódi adatpéldákon keresztül mutatja be a feldolgozás feltételeit. |
+| [Módszertan](MODSZERTAN.md) | Itt vannak a mutatók és a számítás szabályai. |
+| [Adatbázisábra](adatbazis.svg) | Az ábra a táblákat, a mezőket és a kapcsolatokat mutatja. |
+| [Adatbázisséma](adatbazis.sql) | Ez az SQL-fájl hozza létre a táblákat és az adatminőségi nézetet. |
 
-## Helyi indítás
+## Adatminta
 
-Python 3.14.8 és uv szükséges. A repó főmappájában futtasd a következő parancsot.
+Az [adatminta](minta/adatminta.zip) az október 17–21-i eredményeket és öt eredeti, tömörített BKK-választ tartalmaz.
+A kész eredményekből az oldal adatbázis és BKK-kulcs nélkül is megnyitható.
+Az öt válasz csak egy rövid részlet a gyűjtésből, nem az öt nap teljes bemenete.
+
+A csomagban a 169E egy október 20-i útjának összes mentett helyzetadata és megállói frissítése is megvan, a menetrendi sorokkal együtt.
+Ebből a [feldolgozó](elemzes.py) újraszámolja ennek az egy útnak az eredményét.
+A `manifest.json` felsorolja a csomag fájljait és az ellenőrző összegeiket.
+
+## Indítás
+
+[Git](https://git-scm.com/), [uv](https://docs.astral.sh/uv/) és Python 3.14.8 szükséges.
+A következő parancsok PowerShellből indítják a helyi oldalt.
 
 ```powershell
+git clone https://github.com/TGPZTT/kesesfigyelo.git
+cd kesesfigyelo
 uv sync --locked --extra web
-```
-
-A kiszámolt `elemzes*/indulasok.json` és a hozzá tartozó `adatminoseg.json` fájlokat a `data/` alá másolva
-az oldal adatbázis és BKK-kulcs nélkül is elindul.
-
-```powershell
+Expand-Archive -LiteralPath minta/adatminta.zip -DestinationPath . -Force
 uv run --locked --extra web streamlit run app.py --server.address 127.0.0.1
 ```
 
-## Gyűjtés és adatbázis
+A helyi cím [http://127.0.0.1:8501](http://127.0.0.1:8501).
 
-Az [.env.example](.env.example) `BKK_API_KEY` sorából készíts `.env.bkk` fájlt a saját BKK-kulcsoddal.
-A PG kezdetű sorokból készíts `.env.db` fájlt az adatbázisod adataival. Ezek és a `data/` tartalma nem kerülnek Gitbe.
+## Eszközök
 
-Az első két parancs egyszeri próba, a harmadik tartós gyűjtést indít.
+| Eszköz vagy szolgáltatás | Feladat |
+| --- | --- |
+| Python 3.14.8, uv | A Python futtatja a programot, az uv a rögzített csomagverziókból állítja össze a környezetet. |
+| BKK OpenData, GTFS, GTFS Realtime | Innen érkezik a menetrend, a járműhelyzet, a megállói közlés és a forgalmi tájékoztatás. |
+| Open-Meteo | Három térségre ad időjárási modelladatot. |
+| `gtfs-realtime-bindings` 3.0.0, Protobuf | Ezekkel olvassa ki a program a BKK bináris válaszait. |
+| PostgreSQL 18.6, `psycopg` 3.3.6 | A PostgreSQL tárolja az adatokat, a psycopg kapcsolja hozzá a Pythont. |
+| Streamlit 1.66.0, Plotly 6.9.0 | Ezekből készül az oldal és az interaktív ábrák. |
+| pandas 3.0.6, NumPy 2.5.4, tzdata 2026.5 | A táblázatokat, a kapcsolatvizsgálatot és az időzónákat kezelik. |
+| Contabo VPS, Ubuntu 24.04.5 LTS, systemd | A szerveren a helyi géptől függetlenül fut a gyűjtés és a napi feldolgozás. |
+| Docker Desktop | A helyi PostgreSQL és a tesztadatbázis fut benne. A VPS-en közvetlenül fut a PostgreSQL. |
+| Caddy 2.11.7 | A weboldal HTTPS-elérését és a tanúsítvány megújítását intézi. |
+| rclone, Google Drive | A nyers fájlokról és az adatbázisról készülő mentéseket másolják. |
+| Healthchecks.io | A külön működésfigyelő jelzéseit fogadja, és hiba esetén emailt küld. |
+| VS Code, Git, GitHub, OpenSSH | A fejlesztéshez, verziókezeléshez és a szerver eléréséhez használtam őket. |
+| unittest, Ruff | A tesztek futtatására és a kód ellenőrzésére szolgálnak. |
+
+## Beállítások
+
+A [.env.example](.env.example) alapján két helyi beállításfájl kell a saját gyűjtéshez és adatbázishoz.
+A kész eredmények megnyitásához ezek nem szükségesek.
+
+| Fájl | Beállítás |
+| --- | --- |
+| `.env.bkk` | A `BKK_API_KEY` a saját BKK-kulcsot tartalmazza. |
+| `.env.db` | A `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER` és `PGPASSWORD` az adatbázis elérését adja meg. |
+
+## Gyűjtés
+
+A [gyűjtő](gyujto.py) a helyzeteket és az indulási közléseket 30, a forgalmi jelzéseket 60 másodpercenként kéri le.
+A menetrendet naponta, az időjárást 15 percenként ellenőrzi.
 
 ```powershell
 uv run --locked python proba.py
@@ -51,88 +79,56 @@ uv run --locked python gyujto.py --menetrend
 uv run --locked python gyujto.py --folyamatos
 ```
 
-A járműhelyzetek és indulási közlések 30, a forgalmi jelzések 60 másodpercenként érkeznek.
-A menetrendet naponta, az időjárást 15 percenként ellenőrzi a gyűjtő.
-A nyers válaszok tömörítve, a lekérési kísérletek külön naplóban maradnak meg.
+Az első két parancs egyszeri próba, a harmadik folyamatos gyűjtést indít.
+A nyers válaszok és a lekérések naplói a Gitből kizárt `data/` mappába kerülnek.
 
-A következő parancsok új helyi PostgreSQL-adatbázist indítanak Dockerrel, PowerShellből.
-Meglévő adatbázisnál ezt a létrehozást hagyd ki.
+## Adatbázis
+
+Új helyi adatbázishoz [Docker](https://www.docker.com/products/docker-desktop/) kell.
+Meglévő PostgreSQL esetén a létrehozás helyett annak adatai kerüljenek a `.env.db` fájlba.
 
 ```powershell
-$env:POSTGRES_PASSWORD = [Net.NetworkCredential]::new("", (Read-Host "Postgres admin jelszó" -AsSecureString)).Password
-docker run -d --name kesesfigyelo-db-1 --restart unless-stopped -p 127.0.0.1:5433:5432 -v kesesfigyelo-db:/var/lib/postgresql -e POSTGRES_PASSWORD postgres:18.6-bookworm
+$env:POSTGRES_PASSWORD = [Net.NetworkCredential]::new("", (Read-Host "Adatbázis jelszó" -AsSecureString)).Password
+docker run -d --name kesesfigyelo-db-1 --restart unless-stopped -p 127.0.0.1:5433:5432 -v kesesfigyelo-db:/var/lib/postgresql -e POSTGRES_USER=kesesfigyelo_betolto -e POSTGRES_DB=kesesfigyelo -e POSTGRES_PASSWORD postgres:18.6-bookworm
 $env:POSTGRES_PASSWORD = $null
-docker exec -it kesesfigyelo-db-1 psql -U postgres
-```
-
-A megnyíló SQL-parancssorban hozd létre a felhasználót és az adatbázist.
-
-```sql
-CREATE ROLE kesesfigyelo_betolto LOGIN;
-\password kesesfigyelo_betolto
-CREATE DATABASE kesesfigyelo OWNER kesesfigyelo_betolto;
-\q
-```
-
-A megadott felhasználói jelszó kerüljön a `.env.db` fájlba. A következő parancsban a `MENETREND.zip` és `MINTAMAPPA`
-helyére a mentett fájl és a `naplo/` alkönyvtárat is tartalmazó adatmappa útvonala kell.
-
-```powershell
 uv run --locked python betolto.py --letrehoz
-uv run --locked python betolto.py --menetrend MENETREND.zip --adatmappa MINTAMAPPA --limit 20
+```
+
+A megadott jelszó kerüljön a `.env.db` fájlba.
+A [betöltő](betolto.py) a mentett menetrendet és a `naplo/` alkönyvtárat is tartalmazó adatmappát olvassa.
+Az alábbi `MENETREND.zip` és `ADATMAPPA` helyére ezek saját útvonala kell.
+Az öt eredeti választ bemutató kis minta nem teljes napi betöltési anyag.
+
+```powershell
+uv run --locked python betolto.py --menetrend MENETREND.zip --adatmappa ADATMAPPA --limit 20
 uv run --locked python betolto.py --allapot
-uv run --locked python napi.py --nap 2026-10-19
+uv run --locked python napi.py --nap 2026-10-20
 ```
 
-A betöltés futásonként legfeljebb a megadott számú új naplót dolgozza fel. Újraindítva a következőkkel folytatja.
-A napi elemzéshez a nap végét követő négy óráig betöltött adatok kellenek.
-Az eredmény és az újraszámolható `minta.json.gz` külön `data/elemzes-*` mappába kerül. Nap nélkül a tegnap készül el.
-Mentett minta adatbázis nélküli újraszámolásához az `elemzes.py --nap 2026-10-19 --minta MINTA.json.gz` használható.
+Újraindítva a betöltő a következő naplókkal folytatja. A napi számításhoz a nap végét követő négy óráig betöltött adatok kellenek.
 
-## Szerver és napi frissítés
+## Működés
 
-A gyűjtő a `/home/ubuntu/kesesfigyelo` alatt fut. A betöltés ötpercenként legfeljebb 100 új naplót vesz át.
-A napi elemzés budapesti idő szerint 06.15-kor dolgozza fel a tegnapot.
-A web külön felhasználóval, az `/opt/kesesfigyelo-web` alól fut, és csak a `/var/lib/kesesfigyelo-web/data`
-ellenőrzött exportjait olvassa. Az adatbázishoz és a BKK-kulcshoz nincs hozzáférése.
-A jó eredmények automatikusan átkerülnek a webhez. A Git-push nem telepíti a szerver kódját.
+A gyűjtés VPS-en fut, a betöltés ötpercenként indul, a [napi feldolgozás](napi.py) pedig 06.15-kor készíti el az előző napot.
+A [weboldal](app.py) csak az ellenőrzött eredményfájlokat olvassa. Az új napokkal az ábrák és a számított megállapítások is frissülnek.
+A mentést és a hibafigyelést a [módszertan](MODSZERTAN.md) írja le.
+A Git-push önmagában nem telepíti a szerver kódját.
 
-SSH-belépés után ezekkel a parancsokkal ellenőrizhetők a szolgáltatások.
+## Ellenőrzés
 
-```bash
-systemctl status kesesfigyelo.service kesesfigyelo-web.service
-systemctl list-timers 'kesesfigyelo*'
-```
-
-A `kesesfigyelo` SSH-kapcsolat beállítása után egy kész nap letölthető a laptopra.
+Az adatminta kicsomagolása után a következő parancs újraszámolja a kiválasztott 169E-út indulásait.
+A `data/feldolgozasi-minta/vart-eredmeny.json` tartalmazza a várt eredményt. A készítés időpontja újraszámoláskor változik.
 
 ```powershell
-uv run --locked python napi.py --letoltes kesesfigyelo --nap 2026-10-19
-```
-
-A laptop `Kesesfigyelo eredmenyek` feladata 09.00-kor és bejelentkezéskor másolja át az eredményt.
-A web percenként észreveszi az új exportot, a számokkal együtt a következtetések is változnak.
-A napi feldolgozás hibánál öt perc múlva újrapróbálkozik, egy órán belül legfeljebb három indítással.
-Az adatbázisról naponta `.dump` mentés készül. A kész mentéseket és a nyers fájlokat óránként másolja a Drive-mentés.
-A tesztüzemű Google-engedélyt hetente meg kell újítani.
-
-## Tesztek és fájlok
-
-```powershell
+uv run --locked python elemzes.py --nap 2026-10-20 --minta data/feldolgozasi-minta/minta.json.gz --kimenet data/minta-eredmeny
+uv run --locked python gyujto.py --ellenorzes data/mintak-20261016T120719162469Z
 uv run --locked --extra web python -m unittest discover -v
 ```
 
-Az adatbázisos próbákhoz külön tesztadatbázis kapcsolati fájlját add meg a `TEST_DATABASE_CONFIG`
-környezeti változóban. Enélkül ezek a próbák kimaradnak.
+Az automatizált próbák a [tests](tests/) mappában vannak.
+Az adatbázisos próbákhoz a `TEST_DATABASE_CONFIG` változóban külön tesztadatbázis beállításfájlját kell megadni. Enélkül ezek kimaradnak.
 
-| Hely | Tartalom |
-| --- | --- |
-| `gyujto.py`, `proba.py` | Gyűjtés és egyszeri adatforráspróba. |
-| `betolto.py`, `bkk_bovites.py`, `adatbazis.sql` | Betöltés, BKK-mezők és adatbázisséma. |
-| `elemzes.py`, `napi.py`, `app.py` | Számítás, napi feldolgozás és weboldal. |
-| `atallas.py` | Régi adatbázis új mezőinek pótlása a nyers fájlokból, külön ellenőrzött átállás részeként. |
-| `tests/` | Automatizált próbák. |
-| `data/` | Nyers válaszok, naplók, menetrendek, exportok és mentések, Gitből kizárva. |
+## Források
 
-A forrás a [BKK OpenData](https://opendata.bkk.hu/data-sources) és az [Open-Meteo](https://open-meteo.com/), CC BY 4.0 licenccel.
-Az oldal feldolgozott adatokat mutat. Az Open-Meteo ingyenes végpontja nem üzleti használatra való.
+Az adatok a [BKK OpenData](https://opendata.bkk.hu/data-sources) és az [Open-Meteo](https://open-meteo.com/) szolgáltatásából származnak, CC BY 4.0 licenccel.
+Az Open-Meteo ingyenes végpontja nem üzleti használatra való.

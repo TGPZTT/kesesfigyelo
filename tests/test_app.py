@@ -3,12 +3,15 @@
 import json
 import re
 import tempfile
+import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from html.parser import HTMLParser
 from importlib.util import find_spec
 from pathlib import Path
+from threading import Barrier, Lock
 from unittest.mock import patch
 
 WEB_ELERHETO = find_spec("streamlit") is not None and find_spec("plotly") is not None
@@ -445,6 +448,42 @@ class WebTeszt(unittest.TestCase):
         adat = {"utolso_probalkozas_utc": datetime.now(UTC).isoformat(),
                 "allapot": "sikeres", "nap": "2026-10-19", **plusz}
         (self.mappa / ".napi-allapot.json").write_text(json.dumps(adat), encoding="utf-8")
+
+    def test_parhuzamos_keresek_sorban_dolgoznak_es_mind_elkeszulnek(self):
+        inditas, zar = Barrier(4), Lock()
+        aktiv, maximum, kesz = 0, 0, []
+
+        def megjelenites():
+            nonlocal aktiv, maximum
+            with zar:
+                aktiv += 1
+                maximum = max(maximum, aktiv)
+            time.sleep(0.03)
+            with zar:
+                aktiv -= 1
+                kesz.append(True)
+
+        def kereses():
+            inditas.wait(timeout=5)
+            app.main()
+
+        with patch.object(app, "oldal", side_effect=megjelenites), ThreadPoolExecutor(max_workers=4) as szalak:
+            list(szalak.map(lambda _: kereses(), range(4)))
+        self.assertEqual(maximum, 1)
+        self.assertEqual(len(kesz), 4)
+
+    def test_a_kozos_mentest_egyik_latogato_sem_irhatja_at(self):
+        mappa = self.ment("kozos", minta("2026-10-19"))
+        fajl = mappa / "indulasok.json"
+        elso = app.beolvas(str(fajl), fajl.stat().st_mtime_ns)
+        masodik = app.beolvas(str(fajl), fajl.stat().st_mtime_ns)
+        self.assertIs(elso, masodik)
+        with self.assertRaises(TypeError):
+            elso["nap"] = "2026-10-20"
+        with self.assertRaises(TypeError):
+            elso["vonalak"][0]["keses_eloszlas"][0][0] = 999
+        self.assertEqual(masodik["nap"], "2026-10-19")
+        self.assertEqual(masodik["vonalak"][0]["keses_eloszlas"][0][0], 60)
 
     def test_alapbol_minden_nap_es_uj_nap_automatikusan_bekerul(self):
         self.ment("szombat", minta("2026-10-17", 90, 0))

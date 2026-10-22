@@ -1,13 +1,17 @@
 """A mentett BKK-adatok menetrendi eltérései, várakozása és adatminősége."""
 
+import gc
 import json
 import math
 from collections import Counter, defaultdict
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from html import escape
 from itertools import pairwise
 from pathlib import Path
 from textwrap import wrap
+from threading import BoundedSemaphore
+from types import MappingProxyType
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -135,12 +139,21 @@ def abra(kep, magyarazat="", margok=None):
         st.caption(magyarazat)
 
 
-@st.cache_data(show_spinner=False, max_entries=8)
+def csak_olvashato(adat):
+    """A közösen használt mentést egyik látogató megjelenítése sem írhatja át."""
+    if isinstance(adat, dict):
+        return MappingProxyType({k: csak_olvashato(v) for k, v in adat.items()})
+    if isinstance(adat, list):
+        return tuple(csak_olvashato(v) for v in adat)
+    return adat
+
+
+@st.cache_resource(show_spinner=False, max_entries=64)
 def beolvas(fajl, modositas):
     adat = json.loads(Path(fajl).read_text(encoding="utf-8"))
     if isinstance(adat, dict):
         adat.pop("esemenyek", None)
-    return adat
+    return csak_olvashato(adat)
 
 
 @st.cache_data(show_spinner=False, max_entries=128)
@@ -184,7 +197,7 @@ def uj_mentes_figyelese():
 
 
 def minta_ellenorzese(adat):
-    if not isinstance(adat, dict) or not isinstance(adat.get("vonalak"), list) or not adat["vonalak"]:
+    if not isinstance(adat, Mapping) or not isinstance(adat.get("vonalak"), (list, tuple)) or not adat["vonalak"]:
         raise ValueError("Nincs napi vonalminta.")
     modszer = adat.get("modszer")
     if modszer not in ("kozles-haladas-ajto-4", "hev-kozles-kontroll-4"):
@@ -208,7 +221,7 @@ def minta_ellenorzese(adat):
         if (any(type(mp) not in (int, float) or not math.isfinite(mp) or type(db) is not int or db <= 0
                 for mp, db in eloszlas) or sum(db for _, db in eloszlas) != n):
             raise ValueError("Hiányos késési eloszlás.")
-        if not isinstance(sor["minoseg"], dict):
+        if not isinstance(sor["minoseg"], Mapping):
             raise TypeError("Hiányos minősítés.")
 
 
@@ -291,7 +304,7 @@ def hev_adatok(adatok):
     eredmeny = []
     for adat in adatok:
         hev = adat.get("hev")
-        if not isinstance(hev, dict) or hev.get("allapot") not in ("kesz", "nincs_hasznalhato"):
+        if not isinstance(hev, Mapping) or hev.get("allapot") not in ("kesz", "nincs_hasznalhato"):
             continue
         try:
             minta_ellenorzese(hev)
@@ -313,7 +326,7 @@ def hev_hianyok(adatok, kesz):
                         "de késés vagy várakozási idő ebből nem állapítható meg.")
         else:
             hev = adat.get("hev") or {}
-            kod = hev.get("hiba_kod") if isinstance(hev, dict) else None
+            kod = hev.get("hiba_kod") if isinstance(hev, Mapping) else None
             st.info(nap_neve(adat["nap"]) + " napjára nincs értékelhető H8-eredmény. "
                     + HIBAK.get(kod, "A hiányzó eredmény nem nulla késést jelent."))
 
@@ -496,7 +509,7 @@ def varakozas_osszesites(sorok):
 def varakozas_nezet(adatok, vonal=None, irany=None):
     st.subheader("Ha véletlenszerűen megjelenek egy megállóban, akkor átlagosan mennyit kell várnom?")
     sorok = [dict(s, nap=a["nap"]) for a in adatok for s in a.get("kovetesi_reszek", {}).get("orankent", [])
-             if s["vonalak"] == ["3046"] and 6 <= datetime.fromisoformat(s["kezdet"]).hour < 22]
+             if tuple(s["vonalak"]) == ("3046",) and 6 <= datetime.fromisoformat(s["kezdet"]).hour < 22]
     nevek = sorted({megallonev(adatok, s["megallo_id"]) for s in sorok})
     if not nevek:
         st.info("Még nincs használható várakozási számítás.")
@@ -787,7 +800,7 @@ def keses_maximuma(adatok, vonal, irany=None):
     s, mp = min(mertek, key=lambda p: (-p[1], p[0]["nap"], p[0]["ora"], p[0]["irany"]))
     reszlet = s.get("maximum")
     # Régebbi exportból csak az órasáv állapítható meg, pontos időt nem találunk ki.
-    if not isinstance(reszlet, dict) or reszlet.get("keses_mp") != mp:
+    if not isinstance(reszlet, Mapping) or reszlet.get("keses_mp") != mp:
         reszlet = None
     return {"mp": mp, "nap": s["nap"], "ora": s["ora"], "irany": s["irany"], "reszlet": reszlet}
 
@@ -1402,7 +1415,7 @@ def frissitesi_adatok():
             figyelmeztetesek.append("Több mint 36 órája nincs új frissítési állapot. A feldolgozást ellenőrizni kell.")
         forras = allapot.get("forras_allapot")
         if forras is not None:
-            if not isinstance(forras, dict):
+            if not isinstance(forras, Mapping):
                 raise TypeError("Hibás szerverállapot.")
             if forras.get("allapot") == "hiba":
                 figyelmeztetesek.append("A VPS legutóbbi napi feldolgozása sikertelen volt. "
@@ -1567,7 +1580,7 @@ def idojaras_erzekenyseg(sorok, mezo):
 
 
 def regi_modszer(adat):
-    if not isinstance(adat, dict):
+    if not isinstance(adat, Mapping):
         return False
     if adat.get("modszer") in ("helyzet-idokeret-1", "kozles-haladas-ajto-1", "hev-kozles-kontroll-1",
                               "kozles-haladas-ajto-2", "hev-kozles-kontroll-2",
@@ -1577,7 +1590,7 @@ def regi_modszer(adat):
     # Az új időértelmezést tartalmazó, hibás mentés továbbra is figyelmeztetést kap.
     return ("modszer" not in adat and adat.get("napi_sema") == 1
             and {"nap", "keszult_utc", "menetrend_id", "vonalak"} <= adat.keys()
-            and isinstance(adat["vonalak"], list)
+            and isinstance(adat["vonalak"], (list, tuple))
             and not any(k in adat for k in ("forras_csoport", "ido_jelentese", "idokeret_jelentese")))
 
 
@@ -1639,7 +1652,7 @@ def hev_valaszthato_helyek(hev, sorok):
 def hev_kovetes(hev):
     st.subheader("Mennyi idő telt el két vonat között?")
     sorok = [dict(s, nap=a["nap"]) for a in hev for s in a.get("kovetesi_reszek", {}).get("naponta", [])
-             if s["vonalak"] == ["H8"] and len(s["iranyok"]) == 1]
+             if tuple(s["vonalak"]) == ("H8",) and len(s["iranyok"]) == 1]
     lehet = hev_valaszthato_helyek(hev, sorok)
     if not lehet:
         st.info("A kijelölt napokon nincs elegendő, egy állomáshoz és irányhoz kapcsolható adat. Válassz más napokat.")
@@ -1746,7 +1759,22 @@ def url_frissitese(nezet, mod, valasztott):
     st.query_params.from_dict(parameterek)
 
 
+@st.cache_resource(show_spinner=False)
+def megjelenites_zarja():
+    # A teljes napi adatokat egyszerre egy oldalbetöltés dolgozza fel.
+    return BoundedSemaphore(1)
+
+
 def main():
+    with megjelenites_zarja():
+        try:
+            oldal()
+        finally:
+            # Az ábrák körkörös hivatkozásai is felszabadulnak a következő kérés előtt.
+            gc.collect()
+
+
+def oldal():
     st.set_page_config(page_title="Késésfigyelő", layout="wide")
     st.html("""
     <style>

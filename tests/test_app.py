@@ -493,19 +493,23 @@ class WebTeszt(unittest.TestCase):
             self.assertGreaterEqual(len(oldal.warning), 2)
 
     def test_frissites_a_szoveges_eredmenyt_is_modositja(self):
-        hely = self.ment("jo", minta("2026-10-19", 80))
+        masik = dict(minta("2026-10-19", 20, 300)["vonalak"][0], vonal_id="1610")
+        adat = minta("2026-10-19", 80)
+        adat["vonalak"].append(masik)
+        hely = self.ment("jo", adat)
         oldal = self.megjelenit()
-        self.assertIn("40 továbbhaladásnál", self.szoveg(oldal))
+        self.assertIn("97E busznál a legnagyobb (100,0%)", self.szoveg(oldal))
         elso = list(oldal.session_state["mentesek_allapota"])
         uj = minta("2026-10-19", 40, 300)
         uj["vonalak"][0].update(koran_erkezett=20, megvarta_indulast=15)
+        uj["vonalak"].append(masik)
         (hely / "indulasok.json").write_text(json.dumps(uj), encoding="utf-8")
         oldal.run()
         self.rendben(oldal)
         self.assertNotEqual(elso, oldal.session_state["mentesek_allapota"])
-        self.assertEqual(self.darab(oldal), "40")
-        self.assertIn("20 továbbhaladásnál", self.szoveg(oldal))
-        self.assertNotIn("40 továbbhaladásnál", self.szoveg(oldal))
+        self.assertEqual(self.darab(oldal), "60")
+        self.assertIn("mind a 2 járatnál ugyanannyi, 0,0%", self.szoveg(oldal))
+        self.assertNotIn("97E busznál a legnagyobb", self.szoveg(oldal))
         masodik = list(oldal.session_state["mentesek_allapota"])
         oldal.run()
         self.assertEqual(masodik, oldal.session_state["mentesek_allapota"])
@@ -875,8 +879,8 @@ class WebTeszt(unittest.TestCase):
                 oldal.run()
                 self.rendben(oldal)
                 szoveg = self.szoveg(oldal)
-                self.assertIn("Pozitív értéknél későbbi, negatívnál korábbi irányba",szoveg)
-                self.assertIn("önmagában nem jelenti a pontosság javulását vagy romlását",szoveg)
+                self.assertIn("a menetrendi eltérés változása két megálló között",szoveg)
+                self.assertIn("A +1 perc egy perccel későbbre, a −1 perc egy perccel korábbra",szoveg)
                 self.assertNotIn("csökkent a késése",szoveg)
                 kepek = [json.loads(x.proto.spec) for x in oldal.get("plotly_chart")]
                 self.assertIn("Menetrendi eltérés változása (medián, perc)",str(kepek))
@@ -1094,7 +1098,7 @@ class ErthetosegiSzamitasProba(unittest.TestCase):
         self.assertIn("Minden követhető megállónál", szoveg)
         self.assertEqual(pontok, elotte)
         pontok[0]["indulas"] = pontok[0]["tervezett"]
-        self.assertIn("a menetrenddel egyező időt", " ".join(app.keses_pelda_osszefoglalo([adat], pontok)))
+        self.assertIn("a menetrenddel egyező időpont", " ".join(app.keses_pelda_osszefoglalo([adat], pontok)))
         pontok.insert(1, dict(pontok[0], megallo_id="hiany", indulas=None))
         szoveg = " ".join(app.keses_pelda_osszefoglalo([adat], pontok))
         self.assertNotIn("legnagyobb növekedés", szoveg)
@@ -1175,6 +1179,31 @@ class ErthetosegiSzamitasProba(unittest.TestCase):
 
 @unittest.skipUnless(WEB_ELERHETO, "A webes csomagok nem érhetők el.")
 class MenetrendiForrasSzovegProba(unittest.TestCase):
+    def test_a_buszos_kovetkeztetes_az_idok_valtozasaval_megfordul(self):
+        def valasztas(nev, teljes):
+            return {"valasztas": nev, "varakozas_mp": 60, "menetido_mp": teljes - 60,
+                    "teljes_also_mp": teljes - 10, "teljes_felso_mp": teljes + 10}
+        elso, masik = valasztas("elso", 600), valasztas("1610", 720)
+        er = {"valasztasok": [elso, masik]}
+        szoveg = app.buszos_kovetkeztetes(er)
+        self.assertIn("megérte felszállni az első megfelelő buszra", szoveg)
+        self.assertIn("10 perc 0 mp", szoveg)
+        er["valasztasok"] = [valasztas("elso", 800), masik]
+        szoveg = app.buszos_kovetkeztetes(er)
+        self.assertIn("megérte erre a buszra várni", szoveg)
+        self.assertIn("161 megvárásával", szoveg)
+        self.assertNotIn("megérte felszállni", szoveg)
+
+    def test_atfedo_buszos_idokbol_nem_ad_tanacsot(self):
+        er = {"valasztasok": [
+            {"valasztas": "elso", "varakozas_mp": 60, "menetido_mp": 540,
+             "teljes_also_mp": 580, "teljes_felso_mp": 620},
+            {"valasztas": "0975", "varakozas_mp": 90, "menetido_mp": 520,
+             "teljes_also_mp": 590, "teljes_felso_mp": 630}]}
+        szoveg = app.buszos_kovetkeztetes(er)
+        self.assertIn("nem dönthető el a sorrend", szoveg)
+        self.assertNotIn("megérte", szoveg)
+
     def test_a_szurt_mintaszambol_keszul_a_forras_magyarazata(self):
         sorok = [{"vonal_id": "0460", "tervezett": 100, "n": 60,
                   "bkk_terv_db": 30, "eltero_terv_db": 4, "nagy_elteres_db": 2},

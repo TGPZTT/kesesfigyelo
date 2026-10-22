@@ -911,8 +911,8 @@ class WebTeszt(unittest.TestCase):
             "forrasok":{"VehiclePositions":sor,"TripUpdates":sor}}]),encoding="utf-8")
         oldal = self.megjelenit()
         self.nezet(oldal,2)
-        self.assertIn("menetfrissítési közlések legnagyobb száma",self.szoveg(oldal))
-        self.assertIn("A teljes BKK-forrásra vonatkozik",self.szoveg(oldal))
+        self.assertIn("óránkénti legnagyobb jármű- és menetfrissítésszáma",self.szoveg(oldal))
+        self.assertIn("A teljes BKK-forrás",self.szoveg(oldal))
         kep = json.loads(oldal.get("plotly_chart")[-1].proto.spec)
         self.assertIn("Járműutakról kapott közlések",[s["name"] for s in kep["data"]])
         self.assertNotIn("Közlekedő járatok",str(kep))
@@ -933,7 +933,11 @@ class WebTeszt(unittest.TestCase):
         oldal = self.megjelenit()
         self.nezet(oldal,4)
         self.assertEqual(oldal.selectbox(key="hev_irany").value,0)
-        self.assertIn("következő két ábrára",self.szoveg(oldal))
+        self.assertIn("következő két ábrához",oldal.selectbox(key="hev_irany").label)
+        self.assertEqual(oldal.selectbox(key="hev_szakasz_irany").label,
+                         "Irány a szakaszábrához és az alábbi esethez")
+        self.assertEqual(sum(s.value == "Hogyan változik az eltérés két megálló között?"
+                             for s in oldal.subheader), 1)
         sorok.append(dict(sorok[0],megallo_id="D"))
         (hely / "indulasok.json").write_text(json.dumps(adat),encoding="utf-8")
         oldal.run()
@@ -1153,6 +1157,22 @@ class ErthetosegiSzamitasProba(unittest.TestCase):
         self.assertEqual(pontok.mode,"markers")
         self.assertAlmostEqual(app.korrelacio(pontok.x,pontok.y),1)
         self.assertAlmostEqual(app.korrelacio(pontok.x,pontok.y),app.idojaras_erzekenyseg(sorok,"szel_atlag")["r"])
+        # A másik panel ugyanazokat az órákat mutatja a fizikai, eredeti egységekben.
+        nyers = kep.data[2]
+        self.assertEqual(list(nyers.x), [s["szel_atlag"] for s in sorok])
+        self.assertEqual(list(nyers.y), [s["median_keses_mp"] / 60 for s in sorok])
+        self.assertTrue(all(ertek >= 0 for ertek in nyers.x))
+        self.assertLess(min(pontok.x), 0)
+        self.assertEqual(list(nyers.customdata), list(pontok.customdata))
+        self.assertEqual(nyers.xaxis, "x")
+        self.assertEqual(pontok.xaxis, "x2")
+        # Az eredeti egyenes helyes tengelymetszettel, mindkét végpontnál azonos meredekséggel fut.
+        vonal = kep.data[3]
+        ax, ay = sum(nyers.x) / 32, sum(nyers.y) / 32
+        meredekseg = sum((x - ax) * (y - ay) for x, y in zip(nyers.x, nyers.y)) / sum((x - ax) ** 2 for x in nyers.x)
+        for x, y in zip(vonal.x, vonal.y):
+            self.assertAlmostEqual(y, ay + meredekseg * (x - ax))
+        self.assertIn("eltérése a várhatótól", kep.layout.xaxis2.title.text)
         self.assertEqual(sorok,elotte)
         for s in sorok:
             s["median_keses_mp"] = 3000 - s["median_keses_mp"]

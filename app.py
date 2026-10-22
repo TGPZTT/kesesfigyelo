@@ -303,8 +303,9 @@ def hev_hianyok(adatok, kesz):
 
 def hev_hatter(adatok):
     if any("2026-10-17" <= a["nap"] <= "2026-11-06" for a in adatok):
-        st.caption("Október 17. és november 6. között a H8 módosított menetrendje az alap. "
-                   "Az Örs vezér tere és Cinkota közti pótlóbusz nem szerepel az elemzésben. "
+        st.caption("Október 17. és november 6. között felújítás miatt a H8 csak Cinkota és Gödöllő között jár. "
+                   "A felújítás előtti összevetéshez nincs elég adat. "
+                   "Az Örs vezér tere és Cinkota közti pótlóbusz menetrendi párosítása nem igazolt, ezért kimarad. "
                    "[Közlemény](https://www.mavcsoport.hu/mavinform/h8-h9-potlobuszok-fovarosi-szakaszon-oktober-17-november-6).")
 
 
@@ -779,7 +780,7 @@ def maximum_szoveg(adatok, vonal, irany=None):
     if s:
         terv = datetime.fromtimestamp(s["tervezett"], IDOZONA)
         kozolt = datetime.fromtimestamp(s["indulas"], IDOZONA)
-        st.caption(megallonev(adatok, s["megallo_id"]) + ". Menetrendi indulás "
+        st.caption("Ez az érték " + megallonev(adatok, s["megallo_id"]) + " megállónál szerepel. Menetrendi indulás "
                    + nap_neve(terv.date().isoformat()) + " " + terv.strftime("%H:%M:%S")
                    + ". Továbbhaladás " + nap_neve(kozolt.date().isoformat()) + " "
                    + kozolt.strftime("%H:%M:%S") + ".")
@@ -895,7 +896,7 @@ def hev_napi_eloszlas(adatok):
     kep.update_yaxes(title="A vizsgálható közlések aránya (%)", range=[0, 100])
     kep.update_xaxes(tickmode="array", tickvals=[nap_neve(s["nap"]) for s in sorok],
                      ticktext=[nap_neve(s["nap"]) + "<br>" + szam(s["n"]) + " vizsgálható elindulás" for s in sorok])
-    abra(kep, "Egy vonat több állomásnál is szerepel. A kategóriák a közölt időkre vonatkoznak.", {"t": 70})
+    abra(kep, margok={"t": 70})
     leg = min((s for s in sorok if s["n"]), key=lambda s: (-s["db"][3] / s["n"], s["nap"]))
     if not leg["db"][3]:
         st.write("A kijelölt napok vizsgálható közlései között nem volt öt percnél nagyobb késés.")
@@ -955,8 +956,9 @@ def vonalreszlet(adatok):
     keses_pelda(forras, vonal, irany)
 
 
-def szakasz_nezet(forras, vonal, irany):
-    st.subheader("Hogyan változik az eltérés két megálló között?")
+def szakasz_nezet(forras, vonal, irany, cim=True, reszletek=True):
+    if cim:
+        st.subheader("Hogyan változik az eltérés két megálló között?")
     # Az előjel irányt jelez: a korai közlés még korábbivá is válhat.
     st.write("Az érték a menetrendi eltérés változása két megálló között. "
              "A +1 perc egy perccel későbbre, a −1 perc egy perccel korábbra tolódó továbbhaladást jelent.")
@@ -969,10 +971,12 @@ def szakasz_nezet(forras, vonal, irany):
         index = st.selectbox("Az ábrán látható megállósor", range(len(valtozatok)),
                              format_func=lambda i: valtozatok[i]["megallok"][0] + " → "
                              + valtozatok[i]["megallok"][-1] + " (" + str(len(valtozatok[i]["megallok"])) + " megálló)")
-        st.caption("A közös szakaszokhoz az irány minden útvonalának adatai számítanak.")
+        if reszletek:
+            st.caption("A közös szakaszokhoz az irány minden útvonalának adatai számítanak.")
     valasztott = valtozatok[index]
-    st.caption("Ezt a teljes megállósort " + szam(valasztott["utak"])
-               + " járműútra írta elő a menetrend a kijelölt napokon.")
+    if reszletek:
+        st.caption("Ezt a teljes megállósort " + szam(valasztott["utak"])
+                   + " járműútra írta elő a menetrend a kijelölt napokon.")
     rajz = szakasz_sorrend(forras, vonal, irany, valasztott["megallok"])
     keret = pd.DataFrame(rajz)
     kep = go.Figure(go.Scatter(x=keret["Sorszám"], y=keret["Változás (perc)"], mode="lines+markers",
@@ -996,7 +1000,7 @@ def szakasz_nezet(forras, vonal, irany):
     kep.update_layout(height=660, legend={"orientation": "h", "y": 1.15, "x": 0})
     if mert:
         if maximum > 0:
-            st.write("A legnagyobb jellemző változás " + str(maximum).replace(".", ",") + " perc későbbre. "
+            st.write("A legnagyobb medián változás " + str(maximum).replace(".", ",") + " perc későbbre. "
                      + kiemelt[0]["Szakasz"] + ", " + szam(kiemelt[0]["Megfigyelt megállópár"]) + " megfigyelt megállópár alapján.")
         else:
             st.write("Ezen a megállósoron egyik vizsgálható szakaszon sem változott későbbi irányba az eltérés mediánja.")
@@ -1097,9 +1101,7 @@ def adatminoseg(adatok, fajlok):
         kep.update_xaxes(tickmode="array", tickvals=feliratos_idok,
                          ticktext=[HONAPOK[i.month - 1] + " " + str(i.day) + ".<br>" + i.strftime("%H:%M")
                                    for i in feliratos_idok])
-        abra(kep, "Óránként egy válaszban szereplő járművek, illetve menetfrissítési közlések legnagyobb száma. "
-             "A teljes BKK-forrásra vonatkozik, nem a kijelölt járatok forgalmára.")
-    st.caption("A régi forgalmi jelzés önmagában nem jelent adatgyűjtési hibát.")
+        abra(kep, "A teljes BKK-forrás óránkénti legnagyobb jármű- és menetfrissítésszáma látszik.")
 
 
 def idojaras_orak(adatok, terseg):
@@ -1199,27 +1201,35 @@ def idojarasi_pontabra(kapcsolat):
     y = [mp / 60 for mp in masodpercek]
     nev, egyseg = {"Hőmérséklet": ("Hőmérséklet", "°C"), "Szél": ("Szélsebesség", "km/h"),
                    "Csapadék": ("Csapadék", "mm")}[kapcsolat["nev"]]
-    kep = go.Figure(go.Scatter(x=x, y=y, mode="markers", name="Egy-egy óra",
-                               marker={"color": MODSZINEK[kozlekedes(kapcsolat["vonal"])],
-                                       "size": 9, "line": {"color": "#475569", "width": 1}},
-                               customdata=[[nap_neve(s["nap"]), ora_neve(s["ora"]), s[mezo],
-                                            s["median_keses_mp"] / 60, s["n"]] for s in sorok],
-                               hovertemplate="%{customdata[0]}, %{customdata[1]}<br>"
-                                             + nev + " eredetileg %{customdata[2]:.1f} " + egyseg
-                                             + "<br>Eredeti késésmedián %{customdata[3]:.1f} perc"
-                                             "<br>%{customdata[4]} megállói továbbhaladás"
-                                             "<br>Korrekció után %{x:.2f} " + egyseg
-                                             + ", %{y:.2f} perc<extra></extra>"))
-    # A pontokra illesztett egyenes ugyanazt az együttváltozást szemlélteti.
-    meredekseg = sum(a * b for a, b in zip(x, y)) / sum(a * a for a in x)
-    szelso = [min(x), max(x)]
-    kep.add_trace(go.Scatter(x=szelso, y=[meredekseg * a for a in szelso], mode="lines",
-                             line={"color": "#475569"}, name="Illesztett egyenes", hoverinfo="skip"))
-    kep.add_hline(y=0, line_dash="dot", line_color="#94A3B8")
-    kep.add_vline(x=0, line_dash="dot", line_color="#94A3B8")
-    kep.update_xaxes(title=nev + " a napi és órás eltérések kiszűrése után (" + egyseg + ")", automargin=True)
-    kep.update_yaxes(title="Késés a napi és órás eltérések kiszűrése után (perc)", automargin=True)
-    kep.update_layout(height=480, legend={"orientation": "h", "y": 1.12})
+    kep = make_subplots(rows=1, cols=2, horizontal_spacing=.14,
+                        subplot_titles=("Eredeti órás adatok", "A nap és az órasáv eltérései nélkül"))
+    adatok = [[nap_neve(s["nap"]), ora_neve(s["ora"]), s["n"]] for s in sorok]
+    jelolo = {"color": MODSZINEK[kozlekedes(kapcsolat["vonal"])], "size": 8,
+              "line": {"color": "#475569", "width": 1}}
+    # Ugyanazok az órák szerepelnek mindkét oldalon. A korrekció nem válogat új mintát.
+    nyers_x = [s[mezo] for s in sorok]
+    nyers_y = [s["median_keses_mp"] / 60 for s in sorok]
+    for oszlop, xx, yy in ((2, x, y), (1, nyers_x, nyers_y)):
+        kep.add_trace(go.Scatter(x=xx, y=yy, mode="markers", marker=jelolo, showlegend=False,
+                                 customdata=adatok,
+                                 hovertemplate="%{customdata[0]}, %{customdata[1]}<br>%{customdata[2]} továbbhaladás"
+                                               "<br>%{x:.2f} " + egyseg + ", %{y:.2f} perc<extra></extra>"),
+                      row=1, col=oszlop)
+        # Az eredeti adatoknál az egyenes tengelymetszete is számít.
+        ax, ay = sum(xx) / len(xx), sum(yy) / len(yy)
+        meredekseg = sum((a - ax) * (b - ay) for a, b in zip(xx, yy)) / sum((a - ax) ** 2 for a in xx)
+        szelso = [min(xx), max(xx)]
+        kep.add_trace(go.Scatter(x=szelso, y=[ay + meredekseg * (a - ax) for a in szelso], mode="lines",
+                                 line={"color": "#475569"}, showlegend=False, hoverinfo="skip"), row=1, col=oszlop)
+    kep.add_hline(y=0, line_dash="dot", line_color="#94A3B8", row=1, col=2)
+    kep.add_vline(x=0, line_dash="dot", line_color="#94A3B8", row=1, col=2)
+    kep.update_xaxes(title=nev + " (" + egyseg + ")", row=1, col=1)
+    kep.update_yaxes(title="Késésmedián (perc)", row=1, col=1)
+    kep.update_xaxes(title=nev + " eltérése a várhatótól (" + egyseg + ")", row=1, col=2)
+    kep.update_yaxes(title="Késés eltérése a várhatótól (perc)", row=1, col=2)
+    kep.update_xaxes(automargin=True)
+    kep.update_yaxes(automargin=True)
+    kep.update_layout(height=500)
     return kep
 
 
@@ -1240,8 +1250,8 @@ def idojaras_keresek(adatok, fajlok, kezdet, veg):
 
 def idojaras_nezet(adatok, fajlok=None):
     st.header("Együtt változik az időjárás és a késés?")
-    st.write("Az r nulla közelében gyenge kapcsolatot jelez, pozitív értéknél a nagyobb időjárási értékhez nagyobb, negatívnál kisebb késés társul. "
-             "A számítás a napok és órák közti átlagos különbségeket szűri ki, okságot nem bizonyít.")
+    st.write("Az r előjele az együttváltozás irányát, a nullától való távolsága a lineáris kapcsolat erősségét mutatja. "
+             "Az r² ennek a négyzete, nem oksági arány.")
     kapcsolatok = idojaras_osszefugges(adatok)
     vonalak = list(dict.fromkeys(s["vonal"] for s in kapcsolatok))
     nevek = ["Hőmérséklet", "Szél", "Csapadék"]
@@ -1251,11 +1261,11 @@ def idojaras_nezet(adatok, fajlok=None):
         sorok = [index[(v, nev)] for nev in nevek]
         z.append([s["r"] for s in sorok])
         felirat.append([str(round(s["r"], 2)).replace(".", ",") if s["r"] is not None else "—" for s in sorok])
-        custom.append([[s["orak"], s["n"], s["ok"]] for s in sorok])
+        custom.append([[s["orak"], s["n"], s["ok"], round(s["r"] ** 2, 3) if s["r"] is not None else None] for s in sorok])
     kep = go.Figure(go.Heatmap(z=z, x=nevek, y=[vonal_neve(v) for v in vonalak], zmin=-1, zmax=1,
                               colorscale=[[0, "#1D4ED8"], [.5, "#F3F4F6"], [1, "#B91C1C"]],
                               text=felirat, texttemplate="%{text}", customdata=custom,
-                              hovertemplate="%{y}<br>%{x}<br>Kapcsolat %{text}<br>%{customdata[0]} óra, %{customdata[1]} elindulás<br>%{customdata[2]}<extra></extra>"))
+                              hovertemplate="%{y}<br>%{x}<br>r = %{text}, r² = %{customdata[3]}<br>%{customdata[0]} óra, %{customdata[1]} elindulás<br>%{customdata[2]}<extra></extra>"))
     kep.update_layout(height=max(360, 39 * len(vonalak)), plot_bgcolor="#E2E8F0")
     abra(kep)
     szamithato = [s for s in kapcsolatok if s["r"] is not None]
@@ -1263,6 +1273,8 @@ def idojaras_nezet(adatok, fajlok=None):
     if gyenge:
         st.write("A " + str(len(szamithato)) + " számítható összevetésből " + str(len(gyenge))
                  + " gyenge kapcsolatot mutat (−0,3 és +0,3 között).")
+    st.write("Mindkét adatsorból levonom a nap és az órasáv alapján számított eltérést, "
+             "így például a melegebb délután és a délutáni késés együttjárása önmagában nem ad kapcsolatot.")
     homerseklet = homerseklet_kovetkeztetes(kapcsolatok)
     if homerseklet:
         st.write(homerseklet)
@@ -1270,7 +1282,8 @@ def idojaras_nezet(adatok, fajlok=None):
         legerosebb = max(szamithato, key=lambda s: abs(s["r"]))
         st.subheader("A mintában legerősebb kapcsolat")
         st.write(vonal_neve(legerosebb["vonal"]) + ", " + legerosebb["nev"].lower() + ": r = "
-                 + str(round(legerosebb["r"], 2)).replace(".", ",") + " ("
+                 + str(round(legerosebb["r"], 2)).replace(".", ",")
+                 + ", r² = " + str(round(legerosebb["r"] ** 2, 2)).replace(".", ",") + " ("
                  + str(legerosebb["orak"]) + " óra, " + szam(legerosebb["n"]) + " indulás).")
         if abs(legerosebb["r"]) >= .3:
             ido = {"Hőmérséklet": "A melegebb", "Szél": "A szelesebb", "Csapadék": "A csapadékosabb"}[legerosebb["nev"]]
@@ -1280,7 +1293,8 @@ def idojaras_nezet(adatok, fajlok=None):
             st.write("Még a legerősebb kapcsolat is gyenge.")
         kep = idojarasi_pontabra(legerosebb)
         if kep is not None:
-            abra(kep, margok={"b": 70, "t": 45})
+            abra(kep, "Jobbra a negatív érték a nap és az órasáv alapján várhatónál kisebb értéket jelent.",
+                 margok={"b": 85, "t": 45})
         st.caption("Ez több összevetés közül a legerősebb kapcsolat, ezért önmagában nem bizonyító erejű.")
         erzekenyseg = legerosebb["erzekenyseg"]
         if erzekenyseg["kihagyas"]:
@@ -1307,7 +1321,7 @@ def idojaras_nezet(adatok, fajlok=None):
     mentes = "A belvárosi hőmérséklet " + str(teljes) + "/" + str(len(orak)) + " órában teljes."
     if probak:
         mentes += " " + str(probak) + " lekérésből " + str(hibak) + " hibás volt."
-    st.caption(mentes + " Egy hiányzó negyedóra miatt már kimarad az óra. "
+    st.caption(mentes + " Hiányzó negyedóránál az óra kimarad, nincs átlagolásos pótlás. "
                "Forrás: [Open-Meteo](https://open-meteo.com/) térségi modelladat.")
 
 
@@ -1404,9 +1418,9 @@ def hev_modszer():
 def hev_osszehasonlitas(sor):
     n, terv = sor["keseshez_hasznalt"], sor["tervezett"]
     bal, kozep, jobb = st.columns(3)
-    bal.metric("Megállónként vizsgált továbbhaladás", szam(n))
+    bal.metric("Vizsgált állomási továbbhaladások", szam(n))
     kozep.metric("A menetrendből követhető", arany_szoveg(n / terv) if terv else "Nincs adat")
-    jobb.metric("Közölt eltérés (medián)", elteres(sor["median_keses_mp"]))
+    jobb.metric("Medián eltérés a menetrendtől", elteres(sor["median_keses_mp"]))
     arany = kuszob_arany(sor, 60)
     if arany is not None:
         st.write("A vizsgálható közölt idők " + arany_szoveg(arany)
@@ -1415,7 +1429,7 @@ def hev_osszehasonlitas(sor):
         st.info("A közölt idők összevetéséhez nincs elegendő adat.")
     if sor.get("tu_osszevetheto"):
         st.caption(szam(sor["tu_osszevetheto"]) + " közölt időből " + szam(sor["tu_eltero"])
-                   + " kívül esik a korábbi mozgásbecslés időkeretén.")
+                   + " kívül esik a korábbi mozgásbecslés időkeretén. Az ok az adatokból nem dönthető el.")
 
 
 def napi_abra(adatok):
@@ -1577,10 +1591,10 @@ def hev_nezet(adatok):
     hev_kovetes(hev)
     iranyok = sorted({s["irany"] for a in hev for s in a.get("iranyok", [])})
     if iranyok:
-        irany = st.selectbox("A megállósoros ábrák iránya", iranyok,
+        st.subheader("Hogyan változik az eltérés két megálló között?")
+        irany = st.selectbox("Irány a szakaszábrához és az alábbi esethez", iranyok,
                              format_func=lambda i: irany_neve(hev, "H8", i), key="hev_szakasz_irany")
-        st.caption("Ez az irányválasztó a következő két megállósoros ábrát módosítja.")
-        szakasz_nezet(hev, "H8", irany)
+        szakasz_nezet(hev, "H8", irany, cim=False, reszletek=False)
         keses_pelda(hev, "H8", irany)
 
 
@@ -1605,7 +1619,7 @@ def hev_valaszthato_helyek(hev, sorok):
 
 def hev_kovetes(hev):
     st.subheader("Mennyi idő telt el két vonat között?")
-    st.caption("Azonos állomás és irány egymást követő vonatai. A hiányzó vonatot átfogó időköz kimarad.")
+    st.caption("A hiányzó vonatot átfogó időköz kimarad.")
     sorok = [dict(s, nap=a["nap"]) for a in hev for s in a.get("kovetesi_reszek", {}).get("naponta", [])
              if s["vonalak"] == ["H8"] and len(s["iranyok"]) == 1]
     lehet = hev_valaszthato_helyek(hev, sorok)
@@ -1624,7 +1638,6 @@ def hev_kovetes(hev):
     irany = jobb.selectbox("Irány a következő két ábrához", iranyok,
                            format_func=lambda i: irany_neve(hev, "H8", i), key="hev_irany")
     hely = lehet[(nev, irany)]
-    st.caption("Az állomás és az irány a következő két ábrára vonatkozik.")
     rajz = []
     for s in sorok:
         if s["megallo_id"] != hely or s["iranyok"][0]["irany"] != irany:
@@ -1677,7 +1690,7 @@ def hev_kovetes(hev):
                     kep.add_annotation(x=s["Nap"], y=max(s["Közölt időkből számított"], s["Menetrendből számított"]),
                                        text=felirat, showarrow=False, yshift=15, font={"color": "#111827", "size": 12})
         kep.update_yaxes(rangemode="tozero")
-        abra(kep, "Számított várakozás, azonos követhető időszakokra. A hiányos időszakok kimaradnak.")
+        abra(kep, "A hiányos időszakok kimaradnak.")
         merheto = [s for s in sorok if s["megallo_id"] == hely and s["iranyok"][0]["irany"] == irany
                    and s["parok"] >= 3 and s.get("varakozas_mp") is not None
                    and s.get("tervezett_varakozas_mp") is not None]
@@ -1692,7 +1705,6 @@ def hev_kovetes(hev):
         else:
             st.write("A közölt időkből számított átlagos várakozás egyik bemutatott napon sem volt nagyobb "
                      "a menetrendből számoltnál.")
-    st.caption("A felújítás hatása korábbi összehasonlító időszak nélkül nem állapítható meg.")
 
 
 def url_kivalasztas(napok, nezet=None, kijelolt=None):
@@ -1791,7 +1803,6 @@ def main():
                     '<span style="background:#FFD800;color:black;padding:4px 8px;border-radius:4px">Villamos</span> '
                     '<span style="background:#E41F18;color:white;padding:4px 8px;border-radius:4px">Troli</span> '
                     '<span style="background:#ED6E86;color:white;padding:4px 8px;border-radius:4px">HÉV</span></p>')
-    st.sidebar.caption("BKK-színkódok, járműtípus szerint.")
     try:
         if nezet == "Áttekintés":
             attekintes(adatok)

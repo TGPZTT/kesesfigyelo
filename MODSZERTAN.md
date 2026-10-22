@@ -106,6 +106,9 @@ Ismeretlen köztes indulást nem hidalok át. Az áthaladó buszról feltételez
 A saját kérdés az első megfelelő buszra felszállást hasonlítja egy kiválasztott járat megvárásához, közös felszállóhely és cél között.
 A teljes idő várakozásból és ugyanazon busz menetidejéből áll. Csak azok az időszakok számítanak,
 amikor minden választás következő indulása és célba érkezése megállapítható.
+A célba érkezést a közeledő helyzet és az első közeli megállás- vagy ajtójelzés fogja közre.
+A köztes helyzeteknek is érvényesnek kell lenniük, a teljes időköz legfeljebb 120 másodperc.
+Az ismétlődő állásjelzés nem új érkezés. Két külön megérkezés közül nem választok utólag.
 Az időbeli sorrendjükben nem elkülöníthető buszokat nem választom szét önkényesen.
 A weben legalább tízpercnyi közös idő és választásonként három busz kell.
 Az eredmény csak erre a követhető időre érvényes, nem általános napi utazási tanács.

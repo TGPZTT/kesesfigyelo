@@ -568,6 +568,9 @@ def kozos_buszok(adatok):
     if len(keszletek) != 1:
         st.info("A kijelölt napokon eltér a választható járatok köre. Ehhez az összevetéshez válassz kevesebb napot.")
         return
+    if len({s.get("erkezes_modszer", "kozvetlen-pontpar-1") for s in resz}) != 1:
+        st.info("A buszos eredmények frissítése még nem teljes. Ehhez az összevetéshez válassz kevesebb napot.")
+        return
     er = buszos_osszesites(resz)
     if not er["ido"]:
         st.info("Nincs közös, hiány nélkül követhető időszak, ahol minden busz indulása és célba érkezése is behatárolható.")
@@ -583,10 +586,10 @@ def kozos_buszok(adatok):
         nev = "Az első megfelelő busz" if s["valasztas"] == "elso" else "Mindig a " + VONALAK[s["valasztas"]]
         for mezo, resz_neve in (("varakozas_mp", "Várakozás"), ("menetido_mp", "Buszon töltött idő")):
             rajz.append({"Választás": nev, "Átlagos idő (perc)": s[mezo] / 60, "Az utazás része": resz_neve,
-                         "Megfigyelt buszok": s["n"]})
+                         "Felhasznált buszutak": s["n"]})
     kep = px.bar(pd.DataFrame(rajz), y="Választás", x="Átlagos idő (perc)", color="Az utazás része", orientation="h",
                  color_discrete_map={"Várakozás": "#93C5FD", "Buszon töltött idő": MODSZINEK["busz"]},
-                 hover_data=["Megfigyelt buszok"])
+                 hover_data=["Felhasznált buszutak"])
     valasztasok = er["valasztasok"]
     teljes = [s["varakozas_mp"] + s["menetido_mp"] for s in valasztasok]
     kep.add_trace(go.Scatter(
@@ -600,10 +603,11 @@ def kozos_buszok(adatok):
     nevek = ["Az első megfelelő busz" if s["valasztas"] == "elso"
              else "Mindig a " + VONALAK[s["valasztas"]] for s in valasztasok]
     kep.update_yaxes(tickmode="array", tickvals=nevek,
-                     ticktext=[nev + "<br>" + szam(s["n"]) + " megfigyelt buszmegérkezés"
+                     ticktext=[nev + "<br>" + szam(s["n"]) + " külön buszút alapján"
                                for nev, s in zip(nevek, valasztasok)])
     kep.update_layout(barmode="stack", legend={"orientation": "h", "y": 1.15})
-    abra(kep, "Csak a kijelölt napok 6–22 óra közötti közös időszakaira érvényes.")
+    abra(kep, "A kijelölt napok 6–22 óra közötti idejének "
+         + arany_szoveg(er["ido"] / er["teljes"]) + "-a összevethető. Ez nem egész napra érvényes utazási tanács.")
     st.write(buszos_kovetkeztetes(er))
     if er["kesobbi_jobb"]:
         st.write("A követhető időszak " + arany_szoveg(er["kesobbi_jobb"] / er["ido"])

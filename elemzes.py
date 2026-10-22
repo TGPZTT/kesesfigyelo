@@ -1258,6 +1258,53 @@ def kozos_buszok(orak):
     return eredmeny
 
 
+def utazasi_erkezesi_idokeret(pontok, megallo):
+    """A buszos összevetés érkezése, a teljes közeli közeledésből."""
+    if any(type(megallo.get(k)) not in (int, float) or not math.isfinite(megallo[k])
+           for k in ("lat", "lon")) or not (-90 <= megallo["lat"] <= 90 and -180 <= megallo["lon"] <= 180):
+        return None
+    erkezesek = []
+    for i, a in enumerate(pontok):
+        if not (a["jo"] and a["sorrend"] == megallo["sorrend"]
+                and (a.get("allapot") == 1 or a.get("ajto_nyitva") is True)
+                and tavolsag(a, megallo) <= 100):
+            continue
+        # Nem csak a közvetlen előző pont számít. Lassú beálláskor több
+        # közeli helyzet is érkezhet a megállást jelző első adat előtt.
+        for j in range(i - 1, -1, -1):
+            b = pontok[j]
+            if (not pontpar_jo(b, pontok[j + 1])
+                    or a["adat_ido"] - b["adat_ido"] > 120):
+                break
+            if (b["sorrend"] == megallo["sorrend"]
+                    and (b.get("allapot") == 1 or b.get("ajto_nyitva") is True)):
+                break  # Ugyanazt a megállást nem számoljuk új érkezésnek.
+            if tavolsag(b, megallo) >= 40 and tavolsag(a, b) >= 30:
+                erkezesek.append((b["adat_ido"], a["adat_ido"]))
+                break
+    # Két külön megérkezésből nem választunk a menetrendhez illesztve.
+    return erkezesek[0] if len(erkezesek) == 1 else None
+
+
+def utazasi_erkezesek(menet, sorok):
+    """Csak a buszos utazási példát egészíti ki, az indulásokat nem módosítja."""
+    jarmuvek = {s["jarmu_id"] for s in sorok if s["indulas"] is not None}
+    if len(jarmuvek) != 1 or None in jarmuvek:
+        return
+    jarmu = next(iter(jarmuvek))
+    pontok = helyzetek(menet).get(jarmu, [])
+    for s in sorok:
+        if not s["menetrend_ok"] or s["elutasitas"] in (
+                "azonositas", "kevert_vegighaladas", "torolt", "kihagyott"):
+            continue
+        keret = utazasi_erkezesi_idokeret(pontok, s)
+        s.update(erkezes=sum(keret) / 2 if keret else None,
+                 erkezes_also=keret[0] if keret else None,
+                 erkezes_felso=keret[1] if keret else None)
+        if keret:
+            s["jarmu_id"] = jarmu
+
+
 def utazasi_sorok(menetek, honnan, hova):
     """Ugyanazon jármű felszállási és leszállási megállóját kapcsolja össze."""
     eredmeny = []
@@ -1348,10 +1395,12 @@ def buszos_valasztas(sorok, kezdet, veg, kizarasok):
 
 
 def utazasi_eredmenyek(adatok, nap):
-    menetek = [ellenorzott_indulasok(m, True) for m in adatok["menetek"]
-               if m["vonal_id"] in ("0975", "1610", "1695")]
+    bemenetek = [m for m in adatok["menetek"] if m["vonal_id"] in ("0975", "1610", "1695")]
+    menetek = [ellenorzott_indulasok(m, True) for m in bemenetek]
     # A teljes úthoz is kizárjuk a más menetekkel ütköző járműazonosítást.
     ismetlesek([s for m in menetek for s in m])
+    for menet, sorok in zip(bemenetek, menetek):
+        utazasi_erkezesek(menet, sorok)
     zona = ZoneInfo("Europe/Budapest")
     kezdet = datetime.combine(nap, datetime.min.time(), zona) + timedelta(hours=6)
     veg = kezdet + timedelta(hours=16)
@@ -1364,7 +1413,8 @@ def utazasi_eredmenyek(adatok, nap):
                 continue
             er = buszos_valasztas(sorok, kezdet.timestamp(), veg.timestamp(), adatok.get("kizarasok", []))
             if er:
-                buszos.append({"honnan": honnan, "hova": hova, **er})
+                buszos.append({"honnan": honnan, "hova": hova,
+                               "erkezes_modszer": "kozeledes-megallas-2", **er})
     # A HÉV közölt indulását nem keverjük a más időkezelésű helyzetből becsült érkezéssel.
     # Ott a követés és a két állomás indulásai közti különbség készül el külön.
     return {"busz": buszos, "hev": []}

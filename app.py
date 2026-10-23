@@ -105,7 +105,7 @@ def legnagyobb_keses(sor):
 
 def bevezeto():
     st.write("A késés számítása azon alapul, hogy a BKK (utólag) kiadja az indulási időket, amit ellenőrizni kell, "
-             "és a menetrendtől való eltérést ez alapján kell számítani. "
+             "és a menetrendtől való eltérést ez alapján lehet számítani. "
              "Vannak nap közben közölt adhoc módosítások a menetrendben, de ezek nincsenek kifüggesztve a megállóban, "
              "így ezt is késésnek számolja a program. "
              "Külön adatnak számít minden egyes jármű minden egyes megállóból való továbbhaladása, 30mp-enként érkezik ilyen adat. "

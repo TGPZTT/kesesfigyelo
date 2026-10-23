@@ -1091,12 +1091,35 @@ def keses_reszletek(esemenyek, nap):
         return {k: sor[k] for k in ("menet_id", "szolgalati_nap", "vonal_id", "irany", "sorrend",
                                     "megallo_id", "tervezett", "indulas", "keses_mp")}
 
+    def maximum_pont(sor):
+        adat = pont(sor)
+        if sor["vonal_id"] != "H8":
+            return adat
+        # Ugyanazon állomás és irány közvetlenül következő menetrendi vonata számít.
+        kovetkezok = [s for s in esemenyek if s["vonal_id"] == "H8" and s["irany"] == sor["irany"]
+                      and s["megallo_id"] == sor["megallo_id"] and s["tervezett"] > sor["tervezett"]
+                      and (s["menet_id"], s["szolgalati_nap"]) != (sor["menet_id"], sor["szolgalati_nap"])]
+        if not kovetkezok:
+            return adat
+        elso_terv = min(s["tervezett"] for s in kovetkezok)
+        elso = [s for s in kovetkezok if s["tervezett"] == elso_terv]
+        if len(elso) != 1:
+            return adat
+        kov = elso[0]
+        # Hiányzó következő vonatot nem helyettesítünk egy későbbivel.
+        if (ertekelheto(kov) and sor.get("jarmu_id") and kov.get("jarmu_id")
+                and sor["jarmu_id"] != kov["jarmu_id"]
+                and sor["tervezett"] < sor["indulas"] < kov["tervezett"]
+                and sor["indulas"] < kov["indulas"]):
+            adat["kovetkezo_vonat"] = dict(pont(kov), masik_jarmu=True)
+        return adat
+
     oras = []
     for (vonal, irany, ora), sorok in sorted(orak.items()):
         maximum = legkesobbi(sorok)
         oras.append({"vonal_id": vonal, "irany": irany, "ora": ora,
                      "menet_db": len({(s["menet_id"], s["szolgalati_nap"]) for s in sorok}),
-                     "maximum": pont(maximum),
+                     "maximum": maximum_pont(maximum),
                      "maximum_db": sum(s["keses_mp"] == maximum["keses_mp"] for s in sorok)})
     peldak = []
     for (vonal, irany), sorok in sorted(iranyok.items()):
@@ -1110,7 +1133,7 @@ def keses_reszletek(esemenyek, nap):
         # A hiányzó vagy elutasított közlés lyuk marad a vonalban.
         megallok = [dict(pont(s), indulas=s["indulas"] if ertekelheto(s) else None,
                          keses_mp=s["keses_mp"] if ertekelheto(s) else None) for s in ut]
-        peldak.append({"vonal_id": vonal, "irany": irany, "maximum": pont(maximum), "megallok": megallok})
+        peldak.append({"vonal_id": vonal, "irany": irany, "maximum": maximum_pont(maximum), "megallok": megallok})
     return {"orankent": oras, "szelso_utak": peldak}
 
 

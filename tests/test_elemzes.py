@@ -1466,6 +1466,51 @@ class IsmetlesProba(unittest.TestCase):
 
 
 class KesesReszletekProba(unittest.TestCase):
+    def hev_sorok(self):
+        sorok = indulasi_sor([ALAP, ALAP + 3600], [ALAP + 1926, ALAP + 3790])
+        for s in sorok:
+            s.update(vonal_id="H8", minoseg="hev_kozles")
+        return sorok
+
+    def test_hev_rekordhoz_a_kovetkezo_masik_szerelveny_adata_is_elkeszul(self):
+        sorok = self.hev_sorok()
+        elotte = copy.deepcopy(sorok)
+        er = elemzes.keses_reszletek(sorok, date(2026, 10, 17))
+        maximum = er["szelso_utak"][0]["maximum"]
+        kov = maximum["kovetkezo_vonat"]
+        self.assertEqual(kov["tervezett"] - maximum["tervezett"], 3600)
+        self.assertEqual(kov["menet_id"], "T1")
+        self.assertEqual(kov["indulas"], ALAP + 3790)
+        self.assertIs(kov["masik_jarmu"], True)
+        self.assertEqual(er["orankent"][0]["maximum"]["kovetkezo_vonat"], kov)
+        self.assertEqual(sorok, elotte)
+
+    def test_hev_alatamasztas_nem_hasznal_bizonytalan_vagy_masik_adatot(self):
+        for modositas in ({"jarmu_id": "J0"}, {"jarmu_id": None}, {"indulas": None},
+                          {"menetrend_ok": False}, {"irany": 1}, {"megallo_id": "M2"},
+                          {"vonal_id": "3046"}, {"menet_id": "T0"},
+                          {"indulas": ALAP + 1800}, {"tervezett": ALAP + 1800}):
+            with self.subTest(modositas=modositas):
+                sorok = self.hev_sorok()
+                sorok[1].update(modositas)
+                er = elemzes.keses_reszletek(sorok, date(2026, 10, 17))
+                rekord = next(s for s in er["szelso_utak"] if s["irany"] == 0)
+                self.assertNotIn("kovetkezo_vonat", rekord["maximum"])
+
+    def test_hev_hianyzo_kovetkezot_nem_helyettesit_egy_kesobbi_vonat(self):
+        sorok = self.hev_sorok()
+        sorok.append(dict(sorok[1], menet_id="T2", jarmu_id="J2",
+                          tervezett=ALAP + 7200, indulas=ALAP + 7300, keses_mp=100))
+        sorok[1].update(indulas=None, keses_mp=None)
+        er = elemzes.keses_reszletek(sorok, date(2026, 10, 17))
+        self.assertNotIn("kovetkezo_vonat", er["szelso_utak"][0]["maximum"])
+
+    def test_hev_azonos_tervezett_idonel_nem_valaszt_talalomra_vonatot(self):
+        sorok = self.hev_sorok()
+        sorok.append(dict(sorok[1], menet_id="T2", jarmu_id="J2"))
+        er = elemzes.keses_reszletek(sorok, date(2026, 10, 17))
+        self.assertNotIn("kovetkezo_vonat", er["szelso_utak"][0]["maximum"])
+
     def test_egy_vonat_tobb_allomason_nem_tobb_vonat(self):
         sorok = indulasi_sor([ALAP, ALAP + 120, ALAP + 600], [ALAP + 30, ALAP + 240, ALAP + 650])
         sorok[0].update(menet_id="T1", sorrend=1)

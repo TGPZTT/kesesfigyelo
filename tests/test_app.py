@@ -544,13 +544,14 @@ class WebTeszt(unittest.TestCase):
             self.nezet(oldal, i)
             self.assertGreaterEqual(len(oldal.warning), 2)
 
-    def test_frissites_a_szoveges_eredmenyt_is_modositja(self):
+    def test_frissites_a_szazalekos_feliratokat_is_modositja(self):
         masik = dict(minta("2026-10-19", 20, 300)["vonalak"][0], vonal_id="1610")
         adat = minta("2026-10-19", 80)
         adat["vonalak"].append(masik)
         hely = self.ment("jo", adat)
         oldal = self.megjelenit()
-        self.assertIn("97E busznál a legnagyobb (100,0%)", self.szoveg(oldal))
+        kep = json.loads(oldal.get("plotly_chart")[0].proto.spec)
+        self.assertEqual(kep["data"][0]["text"], ["100,0%", "0,0%"])
         elso = list(oldal.session_state["mentesek_allapota"])
         uj = minta("2026-10-19", 40, 300)
         uj["vonalak"][0].update(koran_erkezett=20, megvarta_indulast=15)
@@ -560,8 +561,9 @@ class WebTeszt(unittest.TestCase):
         self.rendben(oldal)
         self.assertNotEqual(elso, oldal.session_state["mentesek_allapota"])
         self.assertEqual(self.darab(oldal), "60")
-        self.assertIn("mind a 2 járatnál ugyanannyi, 0,0%", self.szoveg(oldal))
-        self.assertNotIn("97E busznál a legnagyobb", self.szoveg(oldal))
+        kep = json.loads(oldal.get("plotly_chart")[0].proto.spec)
+        self.assertEqual(kep["data"][0]["text"], ["0,0%", "0,0%"])
+        self.assertNotIn("busznál a legnagyobb", self.szoveg(oldal))
         masodik = list(oldal.session_state["mentesek_allapota"])
         oldal.run()
         self.assertEqual(masodik, oldal.session_state["mentesek_allapota"])
@@ -721,7 +723,9 @@ class WebTeszt(unittest.TestCase):
         self.nezet(oldal,4)
         self.assertIn("15 perc 0 mp volt",self.szoveg(oldal))
         self.assertIn("Öt percnél nagyobb",str([json.loads(x.proto.spec) for x in oldal.get("plotly_chart")]))
-        self.assertIn("08:35:00",self.szoveg(oldal))
+        kepek = [json.loads(x.proto.spec) for x in oldal.get("plotly_chart")]
+        pelda = next(k for k in kepek if k["data"][0].get("name") == "Menetrend")
+        self.assertEqual(pelda["data"][1]["customdata"][-1][1], "2026-10-19 08:35:00")
         self.assertGreaterEqual(len(oldal.get("plotly_chart")),3)
 
     def test_hev_hiba_es_ures_minta_nem_takarja_el_a_tobbi_jaratot(self):
@@ -813,6 +817,146 @@ class WebTeszt(unittest.TestCase):
         self.assertIn("Cinkota felé. A legnagyobb napi medián 30,0 perc", self.szoveg(oldal))
         self.assertNotIn("60,0 perc", self.szoveg(oldal))
 
+    def test_hev_kovetes_skalaja_huszrol_indul_de_rovidebb_idot_sem_vag_le(self):
+        adat = minta("2026-10-19")
+        hev = hev_minta(adat["nap"])
+        hev["megallo_nevek"]["A"] = "Kerepes"
+        kovetes = dict(varakozas(adat["nap"]), vonalak=["H8"],
+                       iranyok=[{"vonal_id": "H8", "irany": 0}],
+                       median_kovetes_mp=1860, max_kovetes_mp=2400)
+        hev["kovetesi_reszek"]["naponta"] = [kovetes]
+        adat["hev"] = hev
+        hely = self.ment("jo", adat)
+        oldal = self.megjelenit()
+        self.nezet(oldal, 4)
+        for perc, also in ((31, 20), (20, 15), (8, 5), (.5, 0)):
+            with self.subTest(perc=perc):
+                kovetes["median_kovetes_mp"] = perc * 60
+                (hely / "indulasok.json").write_text(json.dumps(adat), encoding="utf-8")
+                oldal.run()
+                self.rendben(oldal)
+                kepek = [json.loads(x.proto.spec) for x in oldal.get("plotly_chart")]
+                kep = next(k for k in kepek if k["layout"].get("yaxis", {}).get("title", {}).get("text")
+                           == "Jellemző időköz (medián, perc)")
+                tartomany = kep["layout"]["yaxis"]["range"]
+                self.assertEqual(tartomany[0], also)
+                self.assertLess(tartomany[0], perc)
+                self.assertGreater(tartomany[1], perc)
+
+    def test_hev_kovetes_hetvegi_pontjai_mas_szinuek_es_a_szures_frissiti_a_jelmagyarazatot(self):
+        for nap, perc, parok in (("2026-10-17", 31, 5), ("2026-10-18", 30, 2),
+                                ("2026-10-19", 29, 5)):
+            adat = minta(nap)
+            hev = hev_minta(nap)
+            hev["megallo_nevek"]["A"] = "Kerepes"
+            hev["kovetesi_reszek"]["naponta"] = [dict(
+                varakozas(nap), vonalak=["H8"], iranyok=[{"vonal_id": "H8", "irany": 0}],
+                median_kovetes_mp=perc * 60, max_kovetes_mp=2400, parok=parok)]
+            adat["hev"] = hev
+            self.ment(nap, adat)
+        oldal = self.megjelenit()
+        self.nezet(oldal, 4)
+
+        def kovetesi_kep():
+            kepek = [json.loads(x.proto.spec) for x in oldal.get("plotly_chart")]
+            return next(k for k in kepek if k["layout"].get("yaxis", {}).get("title", {}).get("text")
+                        == "Jellemző időköz (medián, perc)")
+
+        kep = kovetesi_kep()
+        self.assertFalse(kep["data"][0]["connectgaps"])
+        jelmagyarazat = {s["name"]: s for s in kep["data"] if s.get("showlegend", True)}
+        self.assertEqual(set(jelmagyarazat), {"Hétköznap", "Hétvége"})
+        self.assertEqual(jelmagyarazat["Hétköznap"]["marker"]["color"], app.MODSZINEK["HÉV"])
+        self.assertNotEqual(jelmagyarazat["Hétvége"]["marker"]["color"], app.MODSZINEK["HÉV"])
+        self.assertEqual(jelmagyarazat["Hétköznap"]["x"], ["október 19., hétfő"])
+        self.assertEqual(jelmagyarazat["Hétköznap"]["y"], [29])
+        self.assertEqual(jelmagyarazat["Hétvége"]["x"], ["október 17., szombat"])
+        self.assertEqual(jelmagyarazat["Hétvége"]["y"], [31])
+        self.assertEqual(jelmagyarazat["Hétvége"]["customdata"], [[5, 50]])
+        oldal.sidebar.radio(key="idoszak_mod").set_value("Napok kiválasztása").run()
+        for nap, tipus in (("2026-10-19", "Hétköznap"), ("2026-10-17", "Hétvége")):
+            oldal.sidebar.multiselect[0].set_value([nap]).run()
+            self.rendben(oldal)
+            kep = kovetesi_kep()
+            self.assertEqual([s["name"] for s in kep["data"] if s.get("showlegend", True)], [tipus])
+
+    def test_hev_varakozasi_blokk_nincs_de_a_kovetesi_abra_es_szuroi_megmaradnak(self):
+        adat = minta("2026-10-19")
+        hev = hev_minta(adat["nap"])
+        hev["megallo_nevek"]["A"] = "Kerepes"
+        kovetes = dict(varakozas(adat["nap"]), vonalak=["H8"],
+                       iranyok=[{"vonal_id": "H8", "irany": 0}],
+                       median_kovetes_mp=1860, max_kovetes_mp=2400)
+        hev["kovetesi_reszek"]["naponta"] = [kovetes]
+        adat["hev"] = hev
+        hely = self.ment("jo", adat)
+        oldal = self.megjelenit()
+        self.nezet(oldal, 4)
+        for varas in (120, None):
+            with self.subTest(varakozas=varas):
+                kovetes.update(varakozas_mp=varas, tervezett_varakozas_mp=varas)
+                (hely / "indulasok.json").write_text(json.dumps(adat), encoding="utf-8")
+                oldal.run()
+                self.rendben(oldal)
+                self.assertEqual(oldal.selectbox(key="hev_allomas").label, "Állomás")
+                self.assertEqual(oldal.selectbox(key="hev_irany").label, "Irány")
+                cimek = [k["layout"].get("yaxis", {}).get("title", {}).get("text")
+                         for k in [json.loads(x.proto.spec) for x in oldal.get("plotly_chart")]]
+                self.assertIn("Jellemző időköz (medián, perc)", cimek)
+                self.assertNotIn("Átlagos várakozás (perc)", cimek)
+                self.assertNotIn("Mennyi várakozást jelentettek a vonatok közti szünetek?",
+                                 [x.value for x in oldal.subheader])
+                self.assertNotIn("többletvárakozás", self.szoveg(oldal))
+                self.assertNotIn("a következő két ábrára vonatkozik", self.szoveg(oldal))
+                self.assertIn("A legnagyobb napi medián 31,0 perc", self.szoveg(oldal))
+
+    def test_hev_rekord_minden_iranybol_valaszt_es_csak_a_napok_szurik(self):
+        for nap, elso_max, masik_max in (("2026-10-18", 600, 900), ("2026-10-19", 1200, 300)):
+            adat = minta(nap)
+            hev = reszletes_minta(nap, elso_max, True)
+            hev["megallo_nevek"]["A"] = "Cinkota"
+            masik = reszletes_minta(nap, masik_max, True)
+            for nev in ("orankent", "szakaszok", "iranyok"):
+                for sor in masik[nev]:
+                    sor["irany"] = 1
+                hev[nev].extend(masik[nev])
+            hev["iranyok"][-1]["utvonalak"][0].update(elso_megallo_id="B", utolso_megallo_id="A")
+            for nev in ("orankent", "szelso_utak"):
+                for sor in masik["keses_reszletek"][nev]:
+                    sor["irany"] = 1
+                    sor["maximum"].update(irany=1, menet_id="masik", megallo_id="A")
+                    for i, pont in enumerate(sor.get("megallok", [])):
+                        pont.update(irany=1, menet_id="masik", megallo_id="B" if i == 0 else "A")
+                hev["keses_reszletek"][nev].extend(masik["keses_reszletek"][nev])
+            hev["vonalak"][0].update(keseshez_hasznalt=160, tervezett=200,
+                                     keses_eloszlas=[[60, 158], [elso_max, 1], [masik_max, 1]])
+            adat["hev"] = hev
+            self.ment(nap, adat)
+        oldal = self.megjelenit()
+        self.nezet(oldal, 4)
+
+        def rekordabra():
+            return next(json.loads(x.proto.spec) for x in oldal.get("plotly_chart")
+                        if json.loads(x.proto.spec)["data"][0].get("name") == "Menetrend")
+
+        elotte = rekordabra()
+        self.assertIn("A legnagyobb késés 20 perc 0 mp volt, Gödöllő felé.", self.szoveg(oldal))
+        self.assertEqual(self.szoveg(oldal).count("A legnagyobb késés "), 1)
+        self.assertEqual(sum(s.value == "A legnagyobb késésű eset a megállók mentén"
+                             for s in oldal.subheader), 1)
+        oldal.selectbox(key="hev_szakasz_irany").set_value(1).run()
+        self.rendben(oldal)
+        self.assertEqual(rekordabra(), elotte)
+        self.assertIn("A legnagyobb késés 20 perc 0 mp volt, Gödöllő felé.", self.szoveg(oldal))
+        oldal.sidebar.radio(key="idoszak_mod").set_value("Napok kiválasztása").run()
+        oldal.sidebar.multiselect[0].set_value(["2026-10-18"]).run()
+        self.rendben(oldal)
+        self.assertIn("A legnagyobb késés 15 perc 0 mp volt, Cinkota felé.", self.szoveg(oldal))
+        utana = rekordabra()
+        self.assertEqual(utana["data"][1]["customdata"][-1], ["Cinkota", "2026-10-18 08:35:00"])
+        self.assertIn("15 perc 0 mp késés", utana["layout"]["annotations"][0]["text"])
+        self.assertNotIn("A legnagyobb késés 20 perc", self.szoveg(oldal))
+
     def test_regi_hev_es_uj_bkk_nem_keveredik(self):
         adat = minta("2026-10-19")
         adat["hev"] = hev_minta(adat["nap"])
@@ -848,7 +992,8 @@ class WebTeszt(unittest.TestCase):
         self.assertIn("Kevés vizsgálható", heat["data"][1]["customdata"][0][0][4])
         self.assertEqual(heat["data"][1]["customdata"][0][1][4], "Nem volt tervezett továbbhaladás")
         self.assertIsNone(heat["data"][0]["z"][0][0])
-        self.assertEqual(heat["data"][0]["text"][0][8],"80")
+        self.assertEqual(heat["data"][0]["text"][0][8],"1,0")
+        self.assertEqual(heat["data"][0]["customdata"][0][8][0],80)
         self.assertEqual(heat["data"][1]["z"][0][0], 1)
         self.assertEqual(heat["data"][1]["z"][0][1], 0)
         osszes = kepek[1]["data"][0]
@@ -860,7 +1005,52 @@ class WebTeszt(unittest.TestCase):
         self.assertIn("Örs vezér tere", pelda["layout"]["annotations"][0]["text"])
         self.assertEqual(pelda["layout"]["shapes"][0]["y1"] - pelda["layout"]["shapes"][0]["y0"], 15)
 
-    def test_rangsor_mondat_a_hatar_es_az_export_valtozasat_is_koveti(self):
+    def test_oras_kapcsolo_csak_a_hoterkepet_modositja_es_napszuressel_frissul(self):
+        for nap, maximum in (("2026-10-18", 600), ("2026-10-19", 900)):
+            self.ment(nap, reszletes_minta(nap, maximum))
+        oldal = self.megjelenit()
+        self.nezet(oldal, 1)
+        elotte = [json.loads(x.proto.spec) for x in oldal.get("plotly_chart")]
+        oldal.radio(key="oras_mutato_0975").set_value("Legnagyobb rögzített késés").run()
+        self.rendben(oldal)
+        utana = [json.loads(x.proto.spec) for x in oldal.get("plotly_chart")]
+        self.assertEqual(utana[0]["data"][0]["z"][0][8], 10)
+        self.assertEqual(utana[0]["data"][0]["z"][1][8], 15)
+        self.assertEqual(utana[0]["data"][0]["text"][1][8], "15,0")
+        self.assertEqual(elotte[1:], utana[1:])
+        oldal.sidebar.radio(key="idoszak_mod").set_value("Napok kiválasztása").run()
+        oldal.sidebar.multiselect[0].set_value(["2026-10-18"]).run()
+        self.rendben(oldal)
+        kep = json.loads(oldal.get("plotly_chart")[0].proto.spec)
+        self.assertEqual(len(kep["data"][0]["z"]), 1)
+        self.assertEqual(kep["data"][0]["z"][0][8], 10)
+        self.assertIn("a legnagyobb rögzített késés 10 perc", self.szoveg(oldal))
+
+    def test_hev_egyetlen_vonat_maximuma_megmutathato_de_nem_lesz_jellemzo_ertek(self):
+        adat = minta("2026-10-19")
+        hev = reszletes_minta(adat["nap"], 1926, hev=True)
+        for s in hev["vonalak"] + hev["orankent"]:
+            s.update(keses_eloszlas=[[1926, 1]], median_keses_mp=1926, lefedettseg=.01)
+            s["keseshez_hasznalt" if "keseshez_hasznalt" in s else "n"] = 1
+        hev["keses_reszletek"]["orankent"][0]["menet_db"] = 1
+        adat["hev"] = hev
+        self.ment("jo", adat)
+        oldal = self.megjelenit()
+        self.nezet(oldal, 4)
+        elotte = json.loads(oldal.get("plotly_chart")[0].proto.spec)
+        self.assertIsNone(elotte["data"][0]["z"][0][8])
+        oldal.radio(key="oras_mutato_H8").set_value("Legnagyobb rögzített késés").run()
+        self.rendben(oldal)
+        utana = json.loads(oldal.get("plotly_chart")[0].proto.spec)
+        self.assertAlmostEqual(utana["data"][0]["z"][0][8], 32.1)
+        self.assertEqual(utana["data"][0]["text"][0][8], "32,1")
+        self.assertEqual(utana["data"][0]["customdata"][0][8][0], 1)
+        oldal.radio(key="oras_mutato_H8").set_value("Jellemző eltérés").run()
+        self.rendben(oldal)
+        vissza = json.loads(oldal.get("plotly_chart")[0].proto.spec)
+        self.assertIsNone(vissza["data"][0]["z"][0][8])
+
+    def test_rangsor_felirata_a_hatar_es_az_export_valtozasat_is_koveti(self):
         adat = minta("2026-10-19")
         alap = adat["vonalak"][0]
         eloszlasok = {"0975": [[0,60],[90,20]], "1610": [[0,70],[150,10]],
@@ -870,8 +1060,8 @@ class WebTeszt(unittest.TestCase):
         hely = self.ment("jo",adat)
         oldal = self.megjelenit()
         self.rendben(oldal)
-        self.assertIn("legfeljebb 1 perces eltérés aránya", self.szoveg(oldal))
-        self.assertIn("161 busznál a legnagyobb (87,5%)", self.szoveg(oldal))
+        self.assertIn("minden megálló és mindkét irány együtt szerepel itt", self.szoveg(oldal))
+        self.assertNotIn("busznál a legnagyobb", self.szoveg(oldal))
         kep = json.loads(oldal.get("plotly_chart")[0].proto.spec)
         self.assertEqual(kep["data"][0]["name"], "Legfeljebb 1 perc eltérés")
         self.assertEqual(kep["data"][1]["name"], "1 percnél nagyobb eltérés")
@@ -881,10 +1071,8 @@ class WebTeszt(unittest.TestCase):
         self.assertNotIn("vizsgálható", kep["layout"]["xaxis"]["title"]["text"])
         self.assertNotIn("követhető", kep["data"][0]["hovertemplate"])
         oldal.radio[0].set_value(120).run()
-        self.assertIn("legfeljebb 2 perces eltérés aránya", self.szoveg(oldal))
-        self.assertIn("97E busznál", self.szoveg(oldal))
-        self.assertIn("a legnagyobb (100,0%)", self.szoveg(oldal))
         kep = json.loads(oldal.get("plotly_chart")[0].proto.spec)
+        self.assertTrue(kep["data"][0]["y"][0].startswith("97E busz<br>"))
         self.assertEqual(kep["data"][0]["name"], "Legfeljebb 2 perc eltérés")
         self.assertEqual(kep["data"][1]["name"], "2 percnél nagyobb eltérés")
         self.assertEqual(kep["data"][0]["text"][0], "100,0%")
@@ -893,27 +1081,31 @@ class WebTeszt(unittest.TestCase):
         oldal.run()
         self.rendben(oldal)
         self.assertNotIn("a 97E busznál a legnagyobb", self.szoveg(oldal))
-        self.assertIn("97E busznál a legkisebb (0,0%)", self.szoveg(oldal))
+        kep = json.loads(oldal.get("plotly_chart")[0].proto.spec)
+        self.assertEqual(kep["data"][0]["text"][-1], "0,0%")
+        self.assertTrue(kep["data"][0]["y"][-1].startswith("97E busz<br>"))
         adat["vonalak"][0].update(keseshez_hasznalt=40,keses_eloszlas=[[180,40]],lefedettseg=.4)
         (hely / "indulasok.json").write_text(json.dumps(adat),encoding="utf-8")
         oldal.run()
         self.rendben(oldal)
-        self.assertIn("97E busznál a legkisebb (0,0%)",self.szoveg(oldal))
         kep = json.loads(oldal.get("plotly_chart")[0].proto.spec)
+        self.assertEqual(kep["data"][0]["text"][-1], "0,0%")
         self.assertIn("97E busz<br>40 megállói elindulás alapján",kep["data"][0]["y"])
 
-    def test_napi_abran_a_darabszam_eger_nelkul_lathato_es_napszuressel_frissul(self):
+    def test_napi_abran_a_percek_lathatok_a_darabszam_a_reszletekben_marad(self):
         for nap,n in (("2026-10-17",30),("2026-10-18",50),("2026-10-19",70)):
-            self.ment(nap,minta(nap,n))
+            self.ment(nap,minta(nap,n,median=n))
         oldal = self.megjelenit()
         kep = json.loads(oldal.get("plotly_chart")[1].proto.spec)
         self.assertEqual(kep["data"][0]["text"][0],
-                         ["1,0 perc<br>30 továbbhaladás","1,0 perc<br>50 továbbhaladás","1,0 perc<br>70 továbbhaladás"])
+                         ["0,5","0,8","1,2"])
+        self.assertEqual([s[0] for s in kep["data"][0]["customdata"][0]],[30,50,70])
         oldal.sidebar.radio(key="idoszak_mod").set_value("Napok kiválasztása").run()
         oldal.sidebar.multiselect[0].set_value(["2026-10-17","2026-10-19"]).run()
         self.rendben(oldal)
         kep = json.loads(oldal.get("plotly_chart")[1].proto.spec)
-        self.assertEqual(kep["data"][0]["text"][0],["1,0 perc<br>30 továbbhaladás","1,0 perc<br>70 továbbhaladás"])
+        self.assertEqual(kep["data"][0]["text"][0],["0,5","1,2"])
+        self.assertEqual([s[0] for s in kep["data"][0]["customdata"][0]],[30,70])
         self.assertNotIn("október 18",str(kep))
 
     def test_szakasz_eljele_nem_jelent_onmagaban_javulast(self):
@@ -932,7 +1124,7 @@ class WebTeszt(unittest.TestCase):
                 self.rendben(oldal)
                 szoveg = self.szoveg(oldal)
                 self.assertIn("a menetrendi eltérés változása két megálló között",szoveg)
-                self.assertIn("A +1 perc egy perccel későbbre, a −1 perc egy perccel korábbra",szoveg)
+                self.assertIn("nő-e a késés vagy csökken az előző megállóhoz képest",szoveg)
                 self.assertNotIn("csökkent a késése",szoveg)
                 kepek = [json.loads(x.proto.spec) for x in oldal.get("plotly_chart")]
                 self.assertIn("Menetrendi eltérés változása (medián, perc)",str(kepek))
@@ -950,8 +1142,7 @@ class WebTeszt(unittest.TestCase):
         self.nezet(oldal,1)
         oldal.selectbox[2].set_value(1).run()
         self.rendben(oldal)
-        self.assertEqual(oldal.selectbox[2].label,"Az ábrán látható megállósor")
-        self.assertIn("A közös szakaszokhoz az irány minden útvonalának adatai számítanak",self.szoveg(oldal))
+        self.assertEqual(oldal.selectbox[2].label,"Az ábrán látható megállósor (előre kiszámolt néhány példa)")
         self.assertIn("2 járműútra írta elő a menetrend",self.szoveg(oldal))
         kepek = [json.loads(x.proto.spec) for x in oldal.get("plotly_chart")]
         self.assertIn(134,kepek[-1]["data"][0]["customdata"][0])
@@ -966,7 +1157,8 @@ class WebTeszt(unittest.TestCase):
         self.assertIn("óránkénti legnagyobb jármű- és menetfrissítésszáma",self.szoveg(oldal))
         self.assertIn("A teljes BKK-forrás",self.szoveg(oldal))
         kep = json.loads(oldal.get("plotly_chart")[-1].proto.spec)
-        self.assertIn("Járműutakról kapott közlések",[s["name"] for s in kep["data"]])
+        self.assertIn("Indulási adatsorok",[s["name"] for s in kep["data"]])
+        self.assertIn("Szolgálatban lévő járművek",[s["name"] for s in kep["data"]])
         self.assertNotIn("Közlekedő járatok",str(kep))
         self.assertEqual(kep["layout"]["xaxis"]["ticktext"],["október 19.<br>08:00"])
         self.assertIn("október 19., hétfő 08:00",str(kep["data"][0]["customdata"]))
@@ -985,9 +1177,9 @@ class WebTeszt(unittest.TestCase):
         oldal = self.megjelenit()
         self.nezet(oldal,4)
         self.assertEqual(oldal.selectbox(key="hev_irany").value,0)
-        self.assertIn("következő két ábrához",oldal.selectbox(key="hev_irany").label)
+        self.assertEqual(oldal.selectbox(key="hev_irany").label, "Irány")
         self.assertEqual(oldal.selectbox(key="hev_szakasz_irany").label,
-                         "A megállósoros ábrák iránya")
+                         "A szakaszos ábra iránya")
         self.assertEqual(sum(s.value == "Hogyan változik az eltérés két megálló között?"
                              for s in oldal.subheader), 1)
         sorok.append(dict(sorok[0],megallo_id="D"))
@@ -997,7 +1189,8 @@ class WebTeszt(unittest.TestCase):
         self.assertEqual(oldal.selectbox(key="hev_irany").value,1)
         self.assertEqual(oldal.selectbox(key="hev_irany").options,["Cinkota felé"])
         abrak = str([json.loads(x.proto.spec) for x in oldal.get("plotly_chart")])
-        self.assertIn("30 mp többlet",abrak)
+        self.assertNotIn("30 mp többlet",abrak)
+        self.assertIn("Cinkota felé. A legnagyobb napi medián 20,0 perc",self.szoveg(oldal))
 
     def test_idojaras_napvalasztasi_utmutatoja_a_kijelolessel_frissul(self):
         for nap in ("2026-10-17","2026-10-18","2026-10-19"):
@@ -1021,7 +1214,7 @@ class WebTeszt(unittest.TestCase):
         oldal = self.megjelenit()
         self.nezet(oldal, 2)
         self.assertIn("szombat", self.szoveg(oldal))
-        self.assertIn("10 kérésből 1", self.szoveg(oldal))
+        self.assertIn("10 requestből/ adatkérésből 1", self.szoveg(oldal))
         self.assertFalse(tablazatok(oldal))
 
 
@@ -1116,6 +1309,32 @@ class UjElemzesTeszt(unittest.TestCase):
 
 @unittest.skipUnless(WEB_ELERHETO, "A web függőségei is szükségesek.")
 class ErthetosegiSzamitasProba(unittest.TestCase):
+    def test_oras_maximum_hiany_es_korai_indulas_nem_valik_keses_se(self):
+        self.assertIsNone(app.oras_ertek({}, maximum=True))
+        self.assertIsNone(app.oras_ertek({"n": 1, "keses_eloszlas": None}, maximum=True))
+        korai = {"n": 1, "keses_eloszlas": [[-60, 1]], "median_keses_mp": -60, "lefedettseg": .01}
+        self.assertEqual(app.oras_ertek(korai, maximum=True), 0)
+        self.assertIsNone(app.oras_ertek(korai))
+
+    def test_hev_alatamasztas_a_kovetes_valtozasat_koveti(self):
+        kov = {"vonal_id": "H8", "megallo_id": "M1", "irany": 0, "menet_id": "T2",
+               "szolgalati_nap": "2026-10-17", "tervezett": 3600, "indulas": 3700, "masik_jarmu": True}
+        pont = dict(kov, menet_id="T1", tervezett=0, indulas=1200, kovetkezo_vonat=kov)
+        self.assertEqual(app.hev_kovetes_alatamasztasa(pont),
+                         "Ennél az esetnél az órás követés és a következő vonat adatai is alátámasztják a késést.")
+        kov.update(tervezett=1800, indulas=1900)
+        szoveg = app.hev_kovetes_alatamasztasa(pont)
+        self.assertIn("30 perc", szoveg)
+        self.assertNotIn("órás", szoveg)
+        kov.update(indulas=1100)
+        self.assertEqual(app.hev_kovetes_alatamasztasa(pont), "")
+        kov.update(indulas=1900, masik_jarmu=False)
+        self.assertEqual(app.hev_kovetes_alatamasztasa(pont), "")
+        pont["kovetkezo_vonat"] = {"masik_jarmu": True}
+        self.assertEqual(app.hev_kovetes_alatamasztasa(pont), "")
+        pont.pop("kovetkezo_vonat")
+        self.assertEqual(app.hev_kovetes_alatamasztasa(pont), "")
+
     def test_a_homersekleti_mondat_a_kozos_korrekcio_eredmenyet_koveti(self):
         sorok = []
         for nap in range(4):

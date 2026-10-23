@@ -1034,7 +1034,9 @@ def adatbazisbol(conn, nap, vonalak, menetrend_id, menet_azonositok=None):
             megallo[mezo] = (int(menetrendi_ido(date.fromisoformat(s["szolgalati_nap"]), s[mp]).timestamp())
                             if s[mp] is not None else None)
         menet.setdefault("megallok", []).append(megallo)
-    for menet in menetek.values():
+    for kulcs in list(menetek):
+        # A már kiadott út nyers adatait a generátor nem tartja tovább életben.
+        menet = menetek.pop(kulcs)
         param = (menet["menet_id"], menet["szolgalati_nap"], kezdet - timedelta(hours=4), veg + timedelta(hours=4))
         menet["poziciok"] = conn.execute("""
             SELECT extract(epoch FROM m.adat_ido)::bigint adat_ido,
@@ -1418,11 +1420,13 @@ def buszos_valasztas(sorok, kezdet, veg, kizarasok):
 
 
 def utazasi_eredmenyek(adatok, nap):
-    bemenetek = [m for m in adatok["menetek"] if m["vonal_id"] in ("0975", "1610", "1695")]
-    menetek = [ellenorzott_indulasok(m, True) for m in bemenetek]
+    def bemenetek():
+        return (m for m in adatok["menetek"] if m["vonal_id"] in ("0975", "1610", "1695"))
+
+    menetek = [ellenorzott_indulasok(m, True) for m in bemenetek()]
     # A teljes úthoz is kizárjuk a más menetekkel ütköző járműazonosítást.
     ismetlesek([s for m in menetek for s in m])
-    for menet, sorok in zip(bemenetek, menetek):
+    for menet, sorok in zip(bemenetek(), menetek):
         utazasi_erkezesek(menet, sorok)
     zona = ZoneInfo("Europe/Budapest")
     kezdet = datetime.combine(nap, datetime.min.time(), zona) + timedelta(hours=6)
@@ -1512,12 +1516,20 @@ def menetrendi_iranyok(menetek, nap):
 
 def feldolgozas(adatok, nap):
     # Ugyanaz a számítás fut a kézi és a napi exportnál.
-    adatok = dict(adatok, menetek=[menetrendi_alap(m) for m in adatok["menetek"]])
-    forrasok = {hev_vonal(m["vonal_id"]) for m in adatok["menetek"]}
+    esemenyek, regi, leirasok, forrasok = [], [], [], set()
+    for bemenet in adatok["menetek"]:
+        menet = menetrendi_alap(bemenet)
+        forrasok.add(hev_vonal(menet["vonal_id"]))
+        esemenyek.extend(ellenorzott_indulasok(menet))
+        regi.extend(mozgasbol_indulasok(menet))
+        # Az összesítéshez a megállók és a jelenlét kellenek, a nyers sorok nem.
+        leirasok.append({k: v for k, v in menet.items()
+                        if k in ("menet_id", "vonal_id", "irany", "szolgalati_nap", "megallok",
+                                 "megfigyeles_jelenlet")} | {
+                            "poziciok": bool(menet["poziciok"]), "kozlesek": bool(menet["kozlesek"])})
     if len(forrasok) > 1:
         raise ValueError("A HÉV külön feldolgozást igényel.")
     hev = forrasok == {True}
-    esemenyek = [s for menet in adatok["menetek"] for s in ellenorzott_indulasok(menet)]
     ismetlesek(esemenyek)
     eredmeny = osszegzes(esemenyek, nap)
     eredmeny["keses_reszletek"] = keses_reszletek(esemenyek, nap)
@@ -1528,9 +1540,9 @@ def feldolgozas(adatok, nap):
     eredmeny["pontossagi_rangsor"] = not hev
     eredmeny["forras_csoport"] = "hev" if hev else "bkk"
     # Az előző, mozgásból becsült idő csak az átállás ellenőrzésére marad meg.
-    regi = [s for menet in adatok["menetek"] for s in mozgasbol_indulasok(menet)]
     ismetlesek(regi)
     eredmeny["korabbi_modszer"] = osszegzes(regi, nap)["vonalak"]
+    del regi
     eredmeny["ellenorzes"] = {
         "menetrendi_alap": dict(Counter(s["terv_allapot"] for s in esemenyek
                                         if s["indulas"] is not None and kezdet_napon(s["tervezett"], nap))),
@@ -1547,9 +1559,9 @@ def feldolgozas(adatok, nap):
         "megallasjel_nelkul": sum(s["indulas"] is not None and s["esemeny_tipus"] == "tovabbhaladas"
                                  and kezdet_napon(s["tervezett"], nap) for s in esemenyek),
     }
-    eredmeny["iranyok"] = menetrendi_iranyok(adatok["menetek"], nap)
-    eredmeny["utvonal_reszletek"] = utvonal_reszletek(adatok["menetek"], nap)
-    eredmeny["menet_lathatosag"] = menet_lathatosag(adatok["menetek"], nap)
+    eredmeny["iranyok"] = menetrendi_iranyok(leirasok, nap)
+    eredmeny["utvonal_reszletek"] = utvonal_reszletek(leirasok, nap)
+    eredmeny["menet_lathatosag"] = menet_lathatosag(leirasok, nap)
     kezdet = datetime.combine(nap, datetime.min.time(), ZoneInfo("Europe/Budapest")).timestamp()
     veg = datetime.combine(nap + timedelta(days=1), datetime.min.time(), ZoneInfo("Europe/Budapest")).timestamp()
     azonositott = [s for s in esemenyek if s.get("jarmu_menetbol") and s["indulas"] is not None

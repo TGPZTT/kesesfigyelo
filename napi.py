@@ -11,7 +11,7 @@ import shlex
 import subprocess
 import tempfile
 import uuid
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from itertools import pairwise
@@ -38,6 +38,45 @@ HIBAK = {
     "fajl": "A helyi fájl olvasása vagy mentése nem sikerült.",
     "ismeretlen": "A frissítés váratlan hiba miatt megszakadt.",
 }
+
+
+class MentettMenetek:
+    """A napi nyers minta lemezen marad, egyszerre csak egy út kerül memóriába."""
+
+    def __init__(self, sorok, tar):
+        # A fájlt a hívó ExitStack-je zárja be hiba esetén is.
+        self.fajl = tar.enter_context(tempfile.TemporaryFile(mode="w+t", encoding="utf-8"))  # noqa: SIM115
+        self.db = 0
+        for sor in sorok:
+            json.dump(sor, self.fajl, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+            self.fajl.write("\n")
+            self.db += 1
+        self.fajl.flush()
+
+    def __len__(self):
+        return self.db
+
+    def __iter__(self):
+        self.fajl.seek(0)
+        for sor in self.fajl:
+            yield json.loads(sor)
+
+
+def minta_ir(fajl, adat):
+    # A mentés továbbra is közönséges JSON, a teljes lista visszaolvasása nélkül.
+    if isinstance(adat, (dict, MentettMenetek)):
+        szotar = isinstance(adat, dict)
+        fajl.write("{" if szotar else "[")
+        for i, kulcs in enumerate(adat):
+            if i:
+                fajl.write(",")
+            if szotar:
+                json.dump(kulcs, fajl, ensure_ascii=False)
+                fajl.write(":")
+            minta_ir(fajl, adat[kulcs] if szotar else kulcs)
+        fajl.write("}" if szotar else "]")
+    else:
+        json.dump(adat, fajl, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
 
 
 class NapiHiba(ValueError):
@@ -191,12 +230,13 @@ def idojaras_orankent(sorok, nap):
     return eredmeny
 
 
-def hev_adatbazisbol(conn, nap, menetrend):
+def hev_adatbazisbol(conn, nap, menetrend, tar=None):
     try:
         # H8-hiba esetén a savepoint visszaáll, a tíz alapvonal kiadható marad.
         with conn.transaction():
             kornyezet = lepes("menetrend", elemzes.minta_kornyezete, conn, nap, ["H8"], menetrend)
-            menetek = list(elemzes.adatbazisbol(conn, nap, ["H8"], menetrend))
+            sorok = elemzes.adatbazisbol(conn, nap, ["H8"], menetrend)
+            menetek = MentettMenetek(sorok, tar) if tar is not None else list(sorok)
             return {"nap": str(nap), "menetrend_id": menetrend, "mintamenetek": None,
                     "menetek": menetek, **kornyezet}
     except Exception as hiba:  # noqa: BLE001 -- A külön H8-hiba rögzített alstátuszt kap.
@@ -485,7 +525,7 @@ def menetrend_kivalasztas(conn, nap):
     return sor["id"]
 
 
-def minta_es_minoseg(args, nap, vonalak):
+def minta_es_minoseg(args, nap, vonalak, tar=None):
     if args.minta:
         if not args.minoseg:
             raise ValueError("Mentett mintához mentett minőségexport is kell.")
@@ -505,10 +545,11 @@ def minta_es_minoseg(args, nap, vonalak):
                     "menetrend", menetrend_kivalasztas, conn, nap)
                 kornyezet = lepes("menetrend", elemzes.minta_kornyezete, conn, nap, vonalak, menetrend)
                 kornyezet["potlasi_minta"] = elemzes.potlasi_minta(conn, nap, ["H8"])
-                menetek = list(elemzes.adatbazisbol(conn, nap, vonalak, menetrend))
+                sorok = elemzes.adatbazisbol(conn, nap, vonalak, menetrend)
+                menetek = MentettMenetek(sorok, tar) if tar is not None else list(sorok)
                 minoseg = minoseg_adatbazisbol(conn, nap)
                 if set(vonalak) == set(VONALAK):
-                    kornyezet["hev_minta"] = hev_adatbazisbol(conn, nap, menetrend)
+                    kornyezet["hev_minta"] = hev_adatbazisbol(conn, nap, menetrend, tar)
                     kornyezet["hev_minta"]["potlasi_minta"] = kornyezet["potlasi_minta"]
                 try:
                     with conn.transaction():
@@ -518,7 +559,7 @@ def minta_es_minoseg(args, nap, vonalak):
                     kornyezet["idojaras_hiba_kod"] = hiba_besorolas(hiba)
         adatok = {"nap": str(nap), "menetrend_id": menetrend, "mintamenetek": None,
                   "menetek": menetek, "adat_szegely": szegely, **kornyezet}
-    if (adatok.get("nap") != str(nap) or not isinstance(adatok.get("menetek"), list)
+    if (adatok.get("nap") != str(nap) or not isinstance(adatok.get("menetek"), (list, MentettMenetek))
             or not adatok["menetek"] or adatok.get("mintamenetek") or "kizarasok" not in adatok):
         raise ValueError("Hiányos vagy eltérő napi minta.")
     return adatok, minoseg
@@ -555,8 +596,13 @@ def kozzetes(alap, szakasz, nev):
 
 
 def keszit(args, alap, szakasz, nap, most):
+    with ExitStack() as tar:
+        return napi_export(args, alap, szakasz, nap, most, tar)
+
+
+def napi_export(args, alap, szakasz, nap, most, tar):
     vonalak = args.vonal.split(",")
-    adatok, minoseg = minta_es_minoseg(args, nap, vonalak)
+    adatok, minoseg = minta_es_minoseg(args, nap, vonalak, tar)
     adat = szamol(adatok, nap)
     ellenoriz(adat, minoseg, nap, vonalak)
     azonosito = nap.strftime("%Y%m%d") + "-" + most.strftime("%Y%m%dT%H%M%S%fZ") + "-" + uuid.uuid4().hex[:8]
@@ -564,7 +610,7 @@ def keszit(args, alap, szakasz, nap, most):
     mintamappa = szakasz / "minta"
     mintamappa.mkdir()
     with gzip.open(mintamappa / "minta.json.gz", "wt", encoding="utf-8", compresslevel=1) as fajl:
-        json.dump(adatok, fajl, ensure_ascii=False, allow_nan=False)
+        minta_ir(fajl, adatok)
     export = szakasz / "export"
     export.mkdir()
     adat.update(napi_sema=1, minta_fajl=mintanev + "/minta.json.gz")

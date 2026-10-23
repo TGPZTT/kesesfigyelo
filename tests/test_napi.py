@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import ExitStack, redirect_stdout
 from copy import deepcopy
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -17,6 +17,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import napi
+import web_frissites
 from tests.test_elemzes import kis_menet
 
 NAP = date(2026, 10, 19)
@@ -44,6 +45,88 @@ def minoseg(nap=NAP):
 
 
 class NapiProba(unittest.TestCase):
+    def test_lemezes_minta_ismetelten_olvashato_es_valtozatlan_jsonkent_mentheto(self):
+        minta = KiegeszitesProba.minta(self, napi.VONALAK)
+        minta["hev_minta"] = KiegeszitesProba.minta(self, ["H8"])
+        eredeti = deepcopy(minta)
+        with ExitStack() as tar:
+            minta["menetek"] = napi.MentettMenetek(iter(minta["menetek"]), tar)
+            minta["hev_minta"]["menetek"] = napi.MentettMenetek(iter(minta["hev_minta"]["menetek"]), tar)
+            self.assertEqual(list(minta["menetek"]), eredeti["menetek"])
+            self.assertEqual(list(minta["menetek"]), eredeti["menetek"])
+            kimenet = io.StringIO()
+            napi.minta_ir(kimenet, minta)
+            self.assertEqual(json.loads(kimenet.getvalue()), eredeti)
+            lista_eredmeny = napi.szamol(eredeti, date.fromisoformat(eredeti["nap"]))
+            lemez_eredmeny = napi.szamol(minta, date.fromisoformat(eredeti["nap"]))
+            for adat in (lista_eredmeny, lemez_eredmeny):
+                adat.pop("keszult_utc")
+                adat["hev"].pop("keszult_utc")
+            self.assertEqual(lemez_eredmeny, lista_eredmeny)
+            fajl = minta["menetek"].fajl
+        self.assertTrue(fajl.closed)
+
+    def test_nyers_minta_memoriaja_nem_no_a_teljes_nappal(self):
+        import tracemalloc
+
+        tracemalloc.start()
+        try:
+            with ExitStack() as tar:
+                sorok = ({"menet_id": str(i), "adat": "x" * 131072} for i in range(100))
+                menetek = napi.MentettMenetek(sorok, tar)
+                self.assertEqual(len(menetek), 100)
+                self.assertEqual(sum(1 for _ in menetek), 100)
+                self.assertLess(tracemalloc.get_traced_memory()[1], 4 * 1024 * 1024)
+        finally:
+            tracemalloc.stop()
+
+    def test_web_atadas_csak_legujabb_nap_regi_modszert_nem_masol_vissza(self):
+        nap = date(2026, 10, 17)
+        adat = napi.szamol(KiegeszitesProba.minta(self, napi.VONALAK), nap)
+        adat["napi_sema"] = 1
+        with tempfile.TemporaryDirectory() as hely:
+            forras, cel = Path(hely) / "forras", Path(hely) / "web"
+            (forras / "data").mkdir(parents=True)
+            cel.mkdir()
+            regi = "elemzes-20261017-20261022T060000000000Z-11111111"
+            uj = "elemzes-20261017-20261023T060000000000Z-22222222"
+            for nev, modszer, ido in ((regi, "regi-modszer", "2026-10-22T06:00:00+00:00"),
+                                     (uj, napi.elemzes.MODSZER, "2026-10-23T06:00:00+00:00")):
+                mappa = forras / "data" / nev
+                mappa.mkdir()
+                napi.json_ir(mappa / "indulasok.json", dict(adat, modszer=modszer, keszult_utc=ido))
+                napi.json_ir(mappa / "adatminoseg.json", minoseg(nap))
+            napi.allapot(forras, nap, True, MOST)
+            web_frissites.atad(forras, cel)
+            self.assertEqual([m.name for m in (cel / "data").iterdir()], [uj])
+            (cel / "data" / regi).mkdir()
+            for nev in napi.FAJLOK:
+                (cel / "data" / regi / nev).write_bytes((forras / "data" / regi / nev).read_bytes())
+            # Ugyanaz a mappanév korábban kézzel kiegészített fájlt takarhat.
+            fajl = cel / "data" / uj / "indulasok.json"
+            napi.json_ir(fajl, dict(napi.json_olvas(fajl), kiegeszites=True))
+            web_frissites.atad(forras, cel)
+            self.assertEqual(fajl.read_bytes(), (forras / "data" / uj / fajl.name).read_bytes())
+            self.assertFalse((cel / "data" / regi).exists())
+            self.assertEqual((next(cel.glob("archiv-*/")) / regi / fajl.name).read_bytes(),
+                             (forras / "data" / regi / fajl.name).read_bytes())
+            self.assertTrue(next(cel.glob("archiv-*/")).joinpath(uj, fajl.name).exists())
+            web_frissites.atad(forras, cel)
+            self.assertEqual(len(list(cel.glob("archiv-*"))), 1)
+            self.assertEqual(napi.json_olvas(cel / ".napi-allapot.json")["allapot"], "sikeres")
+            # Hibás újabb nap nem írhatja át a működő webes eredményt.
+            elozo = fajl.read_bytes()
+            ujabb = forras / "data" / uj.replace("22222222", "33333333")
+            ujabb.mkdir()
+            hibas = deepcopy(adat)
+            hibas["keszult_utc"] = "2026-10-23T07:00:00+00:00"
+            hibas["vonalak"][0]["keseshez_hasznalt"] = -1
+            napi.json_ir(ujabb / "indulasok.json", hibas)
+            napi.json_ir(ujabb / "adatminoseg.json", minoseg(nap))
+            with self.assertRaises(ValueError):
+                web_frissites.atad(forras, cel)
+            self.assertEqual(fajl.read_bytes(), elozo)
+
     def test_menetlista_ismetles_es_ellentmondo_osszegzes_elutasitva(self):
         adat = eredmeny()
         adat["menet_lathatosag"] = [{
